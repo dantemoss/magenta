@@ -9,7 +9,7 @@ import { AuthButtons } from "@/components/auth/AuthButtons";
 const navItems = [
   { href: "/", label: "Cotizador" },
   { href: "/planes", label: "Precios base" },
-  { href: "/admin/precios", label: "Admin" },
+  { href: "/admin/precios", label: "Administración" },
 ] as const;
 
 export function Navbar() {

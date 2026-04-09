@@ -46,6 +46,9 @@ alter table public.profiles enable row level security;
 alter table public.providers enable row level security;
 alter table public.plans enable row level security;
 alter table public.prices enable row level security;
+-- Si usás precios mensuales, también:
+-- alter table public.price_batches enable row level security;
+-- alter table public.price_batch_rules enable row level security;
 
 -- 5) Policies (lectura: vendedor/supervisor/admin)
 drop policy if exists "profiles self read" on public.profiles;
@@ -102,4 +105,8 @@ with check (public.is_admin(auth.uid()));
 -- o bien un unique compuesto (si aplica a tu modelo):
 -- create unique index if not exists prices_unique
 -- on public.prices(plan_id, role, age_min, age_max, is_particular);
+--
+-- Si implementás histórico mensual, el unique recomendado pasa a ser:
+-- create unique index if not exists prices_unique_month
+-- on public.prices(plan_id, role, age_min, age_max, is_particular, effective_month);
 

@@ -5,6 +5,7 @@ import Image from "next/image";
 
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
+import { monthStartISO } from "@/lib/month";
 import type { PriceRole, PriceRow } from "@/lib/engine/strategies";
 
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +73,7 @@ function getErrorMessage(e: unknown, fallback: string): string {
 export default function PlanPricesPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const effectiveMonth = React.useMemo(() => monthStartISO(), []);
 
   const [providers, setProviders] = React.useState<ProviderRow[]>([]);
   const [plans, setPlans] = React.useState<PlanRow[]>([]);
@@ -112,7 +114,8 @@ export default function PlanPricesPage() {
 
         const { data: prs, error: prErr } = await supabase
           .from("prices")
-          .select("plan_id,age_min,age_max,role,price,is_particular")
+          .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
+          .eq("effective_month", effectiveMonth)
           .order("plan_id")
           .order("role")
           .order("age_min");
@@ -134,7 +137,7 @@ export default function PlanPricesPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [effectiveMonth]);
 
   const providerById = React.useMemo(
     () => new Map(providers.map((p) => [p.id, p])),
@@ -169,18 +172,18 @@ export default function PlanPricesPage() {
       <div className="mx-auto w-full max-w-6xl">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Precios base</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Lista de precios</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Tabla por plan (rangos de edad y rol). Valores mensuales.
+              Buscá un plan y mirá los valores por edad. Mes: {effectiveMonth.slice(0, 7)}.
             </p>
           </div>
-          <Badge variant="secondary">UI limpia</Badge>
+          <Badge variant="secondary">Precios del mes</Badge>
         </div>
 
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle>Filtros</CardTitle>
-            <CardDescription>Encontrá un plan en segundos.</CardDescription>
+            <CardTitle>Buscar y filtrar</CardTitle>
+            <CardDescription>Encontrá un plan rápido.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
@@ -205,12 +208,12 @@ export default function PlanPricesPage() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ej: Medife, Plan 310, ... "
+                placeholder="Ej: Medife, Plan 310…"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Tipo de precio</Label>
+              <Label>Tipo</Label>
               <Select
                 value={isParticular}
                 onValueChange={(v) =>
@@ -222,7 +225,7 @@ export default function PlanPricesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="no_particular">No particular</SelectItem>
+                  <SelectItem value="no_particular">Obra social</SelectItem>
                   <SelectItem value="particular">Particular</SelectItem>
                 </SelectContent>
               </Select>
@@ -234,7 +237,7 @@ export default function PlanPricesPage() {
           {loading ? (
             <Card>
               <CardContent className="p-4 text-sm text-muted-foreground">
-                Cargando planes y precios…
+                Cargando…
               </CardContent>
             </Card>
           ) : error ? (
@@ -289,7 +292,7 @@ export default function PlanPricesPage() {
                     ) : (
                       <div className="overflow-hidden rounded-lg border border-border bg-card">
                         <div className="grid grid-cols-[1fr_110px_140px] gap-2 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-                          <div>Rol</div>
+                          <div>Detalle</div>
                           <div className="text-right">Edad</div>
                           <div className="text-right">Precio / mes</div>
                         </div>
@@ -305,7 +308,7 @@ export default function PlanPricesPage() {
                                 {roleLabel(r.role)}
                               </div>
                               <div className="truncate text-xs text-muted-foreground">
-                                {r.is_particular ? "Particular" : "No particular"}
+                                {r.is_particular ? "Particular" : "Obra social"}
                               </div>
                             </div>
                             <div className="text-right tabular-nums text-muted-foreground">
@@ -320,9 +323,7 @@ export default function PlanPricesPage() {
                     )}
                     <Separator />
                     <p className="text-xs text-muted-foreground">
-                      Nota: estos son <span className="font-medium">precios base</span>{" "}
-                      del plan por rol/rango. El total final depende del grupo familiar y
-                      descuentos/aportes.
+                      Nota: valores por persona y edad. El total puede variar según el grupo familiar.
                     </p>
                   </CardContent>
                 </Card>

@@ -43,6 +43,7 @@ export default function LoginPage() {
       });
       if (signInErr) throw signInErr;
       router.replace(next);
+      router.refresh();
     } catch (err) {
       setError(getErrorMessage(err, "No se pudo iniciar sesión"));
     } finally {

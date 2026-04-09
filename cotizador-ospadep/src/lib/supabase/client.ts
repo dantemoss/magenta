@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -18,12 +18,6 @@ function assertSafeBrowserKey(key: string): void {
 
 export const supabase = isSupabaseConfigured()
   ? (assertSafeBrowserKey(supabaseAnonKey!),
-    createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-    }))
+    createBrowserClient(supabaseUrl!, supabaseAnonKey!))
   : null;
 

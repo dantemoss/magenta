@@ -25,6 +25,8 @@ export interface PriceRow {
   role: PriceRole;
   price: number;
   is_particular: boolean;
+  // Para histórico mensual (cuando se selecciona por `effective_month`)
+  effective_month?: string;
 }
 
 export interface QuoteStrategyContext {

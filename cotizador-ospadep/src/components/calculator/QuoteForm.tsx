@@ -22,6 +22,7 @@ import {
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatMoneyCompact } from "@/lib/money";
+import { monthStartISO } from "@/lib/month";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -165,6 +166,7 @@ export function QuoteForm() {
   const [result, setResult] = React.useState<QuoteResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const effectiveMonth = React.useMemo(() => monthStartISO(), []);
 
   const [providers, setProviders] = React.useState<ProviderRow[]>([]);
   const [plans, setPlans] = React.useState<PlanRow[]>([]);
@@ -287,8 +289,9 @@ export function QuoteForm() {
       try {
         const { data, error: prErr } = await supabase
           .from("prices")
-          .select("plan_id,age_min,age_max,role,price,is_particular")
+          .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
           .eq("plan_id", selectedPlanId)
+          .eq("effective_month", effectiveMonth)
           .order("role")
           .order("age_min");
         if (prErr) throw prErr;
@@ -303,7 +306,7 @@ export function QuoteForm() {
     return () => {
       alive = false;
     };
-  }, [selectedPlanId]);
+  }, [selectedPlanId, effectiveMonth]);
 
   function onSubmit(values: FormValues) {
     setError(null);
@@ -351,10 +354,10 @@ export function QuoteForm() {
                 <div>
                   <CardTitle>Cotizador</CardTitle>
                   <CardDescription>
-                    Elegí plan, cargá el grupo familiar y obtené el desglose.
+                    Elegí un plan, cargá edades y obtené el total.
                   </CardDescription>
                 </div>
-                <Badge variant="secondary">Luma · Neutral · Teal</Badge>
+                <Badge variant="secondary">Mes: {effectiveMonth.slice(0, 7)}</Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -758,7 +761,7 @@ export function QuoteForm() {
                     ) : null}
                   </div>
                   <CardDescription>
-                    Desglose por integrante + descuentos/aportes.
+                    Detalle del total.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
