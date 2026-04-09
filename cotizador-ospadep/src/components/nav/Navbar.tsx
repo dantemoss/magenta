@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+import { AuthButtons } from "@/components/auth/AuthButtons";
 
 const navItems = [
   { href: "/", label: "Cotizador" },
   { href: "/planes", label: "Precios base" },
+  { href: "/admin/precios", label: "Admin" },
 ] as const;
 
 export function Navbar() {
@@ -44,6 +46,10 @@ export function Navbar() {
             );
           })}
         </nav>
+
+        <div className="hidden sm:block">
+          <AuthButtons />
+        </div>
       </div>
     </header>
   );

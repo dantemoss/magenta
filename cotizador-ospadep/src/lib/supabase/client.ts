@@ -17,6 +17,13 @@ function assertSafeBrowserKey(key: string): void {
 }
 
 export const supabase = isSupabaseConfigured()
-  ? (assertSafeBrowserKey(supabaseAnonKey!), createClient(supabaseUrl!, supabaseAnonKey!, { auth: { persistSession: false } }))
+  ? (assertSafeBrowserKey(supabaseAnonKey!),
+    createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    }))
   : null;
 
