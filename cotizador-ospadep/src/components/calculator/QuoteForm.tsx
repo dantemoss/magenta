@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import type { QuoteRequest, QuoteResult } from "@/types/quotes";
+import type { DetailedQuoteResult, QuoteLineItem, QuoteRequest, QuoteResult } from "@/types/quotes";
 import {
   MedifeStrategy,
   OmintStrategy,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/engine/strategies";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { formatMoney, formatMoneyCompact } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -106,6 +108,15 @@ type FormOutput = z.output<typeof formSchema>;
 type ProviderRow = { id: string; name: string; slug: string };
 type PlanRow = { id: string; provider_id: string; name: string; type: string };
 
+function logoSrcForProviderSlug(slug: string): string | null {
+  const s = slug.toLowerCase();
+  if (s === "medife") return "/MEDIFE.png";
+  if (s === "omint") return "/Omint.png";
+  if (s === "ospadep") return "/OSPADEP.png";
+  if (s === "swiss-medical") return "/SwissMedical.png";
+  return null;
+}
+
 function getErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error) return e.message;
   if (typeof e === "object" && e !== null && "message" in e) {
@@ -151,6 +162,10 @@ function buildQuoteRequest(values: FormValues): QuoteRequest {
   };
 }
 
+function isDetailedQuoteResult(res: QuoteResult): res is DetailedQuoteResult {
+  return "lineItems" in res;
+}
+
 export function QuoteForm() {
   const [result, setResult] = React.useState<QuoteResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -161,6 +176,9 @@ export function QuoteForm() {
   const [selectedProviderId, setSelectedProviderId] = React.useState<string>("");
   const [selectedPlanId, setSelectedPlanId] = React.useState<string>("");
   const [prices, setPrices] = React.useState<PriceRow[]>([]);
+  const [pricesByPlanId, setPricesByPlanId] = React.useState<
+    Record<string, PriceRow[]>
+  >({});
   const [lastInputs, setLastInputs] = React.useState<{
     holderAporte: number;
     spouseAporte: number;
@@ -200,6 +218,7 @@ export function QuoteForm() {
     control: form.control,
     name: "spouseUsesGross",
   });
+  const watchedAll = useWatch({ control: form.control });
 
   const selectedProvider = React.useMemo(
     () => providers.find((p) => p.id === selectedProviderId) ?? null,
@@ -294,6 +313,85 @@ export function QuoteForm() {
       alive = false;
     };
   }, [selectedPlanId]);
+
+  React.useEffect(() => {
+    let alive = true;
+    async function loadAllPrices() {
+      if (!supabase) return;
+      if (plans.length === 0) return;
+      try {
+        const planIds = plans.map((p) => p.id);
+        const { data, error: prErr } = await supabase
+          .from("prices")
+          .select("plan_id,age_min,age_max,role,price,is_particular")
+          .in("plan_id", planIds)
+          .order("plan_id")
+          .order("role")
+          .order("age_min");
+        if (prErr) throw prErr;
+        if (!alive) return;
+        const grouped: Record<string, PriceRow[]> = {};
+        for (const row of (data ?? []) as PriceRow[]) {
+          (grouped[row.plan_id] ??= []).push(row);
+        }
+        setPricesByPlanId(grouped);
+      } catch (e) {
+        if (!alive) return;
+        setError(getErrorMessage(e, "Error cargando todos los precios"));
+      }
+    }
+    void loadAllPrices();
+    return () => {
+      alive = false;
+    };
+  }, [plans]);
+
+  const liveRequest = React.useMemo(() => {
+    const parsed = formSchema.safeParse(watchedAll);
+    if (!parsed.success) return null;
+    return buildQuoteRequest(parsed.data);
+  }, [watchedAll]);
+
+  const allPlanQuotes = React.useMemo(() => {
+    if (!liveRequest) return [];
+    if (providers.length === 0 || plans.length === 0) return [];
+
+    const providerById = new Map(providers.map((p) => [p.id, p]));
+
+    const out: {
+      provider: ProviderRow;
+      plan: PlanRow;
+      total: number;
+      basePrice: number;
+      discounts: { label: string; value: number }[];
+    }[] = [];
+
+    for (const plan of plans) {
+      const provider = providerById.get(plan.provider_id);
+      if (!provider) continue;
+      const planPrices = pricesByPlanId[plan.id] ?? [];
+      if (planPrices.length === 0) continue;
+      try {
+        const strat = strategyForProviderSlug(provider.slug);
+        const res = strat.quote(
+          { providerName: provider.name, planId: plan.id, prices: planPrices },
+          liveRequest,
+        );
+        out.push({
+          provider,
+          plan,
+          total: res.total,
+          basePrice: res.basePrice,
+          discounts: res.discounts,
+        });
+      } catch {
+        // Si un plan no puede cotizarse con los inputs actuales (faltan roles/rangos), lo omitimos.
+      }
+    }
+
+    out.sort((a, b) => a.total - b.total);
+    return out;
+  }, [liveRequest, providers, plans, pricesByPlanId]);
 
   function onSubmit(values: FormValues) {
     setError(null);
@@ -752,14 +850,14 @@ export function QuoteForm() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {"lineItems" in result ? (
+                  {result && isDetailedQuoteResult(result) ? (
                     <div className="overflow-hidden rounded-lg border border-border bg-card">
                       <div className="grid grid-cols-[1fr_90px_120px] gap-2 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
                         <div>Integrante / Categoría</div>
                         <div className="text-right">Edad</div>
                         <div className="text-right">Precio</div>
                       </div>
-                      {(result as any).lineItems.map((it: any, idx: number) => (
+                      {(result.lineItems as QuoteLineItem[]).map((it, idx) => (
                         <div
                           key={`${idx}-${it.category}-${it.memberRole}-${it.memberAge}`}
                           className="grid grid-cols-[1fr_90px_120px] gap-2 px-3 py-2 text-sm"
@@ -782,7 +880,7 @@ export function QuoteForm() {
                             {Number(it.memberAge)}
                           </div>
                           <div className="text-right tabular-nums font-medium">
-                            {Number(it.price).toFixed(2)}
+                            {formatMoney(Number(it.price))}
                           </div>
                         </div>
                       ))}
@@ -794,14 +892,14 @@ export function QuoteForm() {
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">Aporte Titular</span>
                         <span className="font-medium tabular-nums">
-                          -{lastInputs.holderAporte.toFixed(2)}
+                          -{formatMoney(lastInputs.holderAporte)}
                         </span>
                       </div>
                       {lastInputs.spouseAporte > 0 ? (
                         <div className="flex items-center justify-between">
                           <span className="text-muted-foreground">Aporte Cónyuge</span>
                           <span className="font-medium tabular-nums">
-                            -{lastInputs.spouseAporte.toFixed(2)}
+                            -{formatMoney(lastInputs.spouseAporte)}
                           </span>
                         </div>
                       ) : null}
@@ -814,7 +912,7 @@ export function QuoteForm() {
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Base</span>
                       <span className="font-medium tabular-nums">
-                        {result.basePrice.toFixed(2)}
+                        {formatMoney(result.basePrice)}
                       </span>
                     </div>
 
@@ -822,7 +920,7 @@ export function QuoteForm() {
                       <div key={d.label} className="flex items-center justify-between">
                         <span className="text-muted-foreground">{d.label}</span>
                         <span className="font-medium tabular-nums">
-                          -{d.value.toFixed(2)}
+                          -{formatMoney(d.value)}
                         </span>
                       </div>
                     ))}
@@ -830,13 +928,115 @@ export function QuoteForm() {
                     <div className="mt-1 flex items-center justify-between border-t border-border pt-2">
                       <span>Total</span>
                       <span className="text-base font-semibold tabular-nums">
-                        {result.total.toFixed(2)}
+                        {formatMoney(result.total)}
                       </span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             ) : null}
+
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <CardTitle>Todos los planes</CardTitle>
+                    <CardDescription>
+                      Totales <span className="font-medium">por mes</span> según el
+                      grupo familiar y aportes cargados.
+                    </CardDescription>
+                  </div>
+                  <Badge variant="secondary">Comparador</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!isSupabaseConfigured() || !supabase ? (
+                  <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                    Configurá Supabase para ver todos los planes.
+                  </div>
+                ) : liveRequest ? (
+                  allPlanQuotes.length === 0 ? (
+                    <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                      No hay planes cotizables con los datos actuales (o faltan
+                      precios en la base).
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {allPlanQuotes.map((q) => {
+                        const logoSrc = logoSrcForProviderSlug(q.provider.slug);
+                        return (
+                          <div
+                            key={`${q.provider.id}-${q.plan.id}`}
+                            className="group relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                          >
+                            <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100">
+                              <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+                            </div>
+
+                            <div className="relative flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {logoSrc ? (
+                                    <Image
+                                      src={logoSrc}
+                                      alt={`${q.provider.name} logo`}
+                                      width={28}
+                                      height={28}
+                                      className="h-7 w-7 rounded-md border border-border bg-white object-contain p-1"
+                                    />
+                                  ) : null}
+                                  <p className="truncate text-sm font-medium">
+                                    {q.provider.name}
+                                  </p>
+                                </div>
+                                <p className="mt-1 truncate text-xs text-muted-foreground">
+                                  {q.plan.name} · {q.plan.type}
+                                </p>
+                              </div>
+                              <Badge variant="outline">/ mes</Badge>
+                            </div>
+
+                            <div className="relative mt-4 flex items-end justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs text-muted-foreground">
+                                  Total mensual
+                                </p>
+                                <p className="truncate text-2xl font-semibold tabular-nums tracking-tight">
+                                  {formatMoneyCompact(q.total)}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                                  {formatMoney(q.total)}
+                                </p>
+                              </div>
+                              <div className="text-right text-xs text-muted-foreground">
+                                <div className="tabular-nums">
+                                  Base: {formatMoneyCompact(q.basePrice)}
+                                </div>
+                                {q.discounts.length > 0 ? (
+                                  <div className="tabular-nums">
+                                    Desc.:{" "}
+                                    {formatMoneyCompact(
+                                      q.discounts.reduce((a, d) => a + d.value, 0),
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div>Sin descuentos</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                    Completá el formulario (edades y aportes) para ver la lista
+                    completa.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </form>
         </div>
 
@@ -864,7 +1064,7 @@ export function QuoteForm() {
                 <div>
                   <p className="text-xs text-muted-foreground">Total</p>
                   <p className="text-2xl font-semibold tabular-nums">
-                    {result ? result.total.toFixed(2) : "--"}
+                    {result ? formatMoneyCompact(result.total) : "--"}
                   </p>
                 </div>
                 {result ? <Badge variant="default">Cotizado</Badge> : <Badge>Listo</Badge>}
