@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { AnimatePresence, motion } from "framer-motion";
 
 import type {
   DetailedQuoteResult,
@@ -190,6 +191,34 @@ const shadowBorder = "0px 0px 0px 1px rgba(0,0,0,0.08)";
 const shadowCard = "rgba(0,0,0,0.08) 0px 0px 0px 1px, rgba(0,0,0,0.04) 0px 2px 2px";
 const shadowInput = "0px 0px 0px 1px rgba(0,0,0,0.10)";
 
+// ─── Animation variants ───────────────────────────────────────────────────────
+
+const stepVariants = {
+  enter: (dir: number) => ({
+    opacity: 0,
+    x: dir > 0 ? 24 : -24,
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.22, ease: "easeOut" as const },
+  },
+  exit: (dir: number) => ({
+    opacity: 0,
+    x: dir > 0 ? -24 : 24,
+    transition: { duration: 0.18, ease: "easeIn" as const },
+  }),
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 8 },
+  show: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.06, duration: 0.2, ease: "easeOut" as const },
+  }),
+};
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function QuoteForm() {
@@ -200,6 +229,7 @@ export function QuoteForm() {
   const [pdfExporting, setPdfExporting] = React.useState(false);
   const [expandedPlanId, setExpandedPlanId] = React.useState<string | null>(null);
   const [currentStep, setCurrentStep] = React.useState(0);
+  const [stepDir, setStepDir] = React.useState(1);
   const effectiveMonth = React.useMemo(() => monthStartISO(), []);
 
   const [providers, setProviders] = React.useState<ProviderRow[]>([]);
@@ -452,6 +482,7 @@ export function QuoteForm() {
     setError(null);
     if (currentStep === 0) {
       if (!canAdvanceFromStep0()) return;
+      setStepDir(1);
       setCurrentStep(1);
     } else if (currentStep === 1) {
       const fields: Parameters<typeof form.trigger>[0] = hasSpouse
@@ -459,10 +490,12 @@ export function QuoteForm() {
         : ["holderAge"];
       const valid = await form.trigger(fields);
       if (!valid) return;
+      setStepDir(1);
       setCurrentStep(2);
     } else if (currentStep === 2) {
       form.handleSubmit((values) => {
         onSubmit(values);
+        setStepDir(1);
         setCurrentStep(3);
       })();
     }
@@ -477,6 +510,7 @@ export function QuoteForm() {
       setExpandedPlanId(null);
       setSelectedPlanIds(plans.filter((p) => p.provider_id === selectedProviderId).map((p) => p.id));
     } else {
+      setStepDir(-1);
       setCurrentStep((s) => s - 1);
     }
   }
@@ -598,6 +632,18 @@ export function QuoteForm() {
           {/* Content area */}
           <div className="flex flex-1 flex-col px-8 py-8">
 
+            {/* AnimatePresence wraps the animated step content */}
+            <AnimatePresence mode="wait" custom={stepDir} initial={false}>
+              <motion.div
+                key={currentStep}
+                custom={stepDir}
+                variants={stepVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                className="flex flex-1 flex-col"
+              >
+
             {/* Step header */}
             <div className="mb-8">
               <p className="mb-1.5 text-[11px] font-medium uppercase tracking-widest text-[#808080]">
@@ -618,7 +664,14 @@ export function QuoteForm() {
             {currentStep === 0 && (
               <div className="flex-1 space-y-4">
                 {loading && (
-                  <p className="text-sm text-[#808080]">Cargando prestadores…</p>
+                  <motion.p
+                    className="text-sm text-[#808080]"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                  >
+                    Cargando prestadores…
+                  </motion.p>
                 )}
 
                 {/* Compare all toggle */}
@@ -727,7 +780,14 @@ export function QuoteForm() {
                         </div>
                       </div>
                       {loadingPrices && (
-                        <p className="text-xs text-[#808080]">Cargando tarifas…</p>
+                        <motion.p
+                          className="text-xs text-[#808080]"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: [0.4, 1, 0.4] }}
+                          transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                        >
+                          Cargando tarifas…
+                        </motion.p>
                       )}
                       <div
                         className="max-h-48 space-y-0.5 overflow-y-auto rounded-lg px-2 py-2"
@@ -1149,7 +1209,12 @@ export function QuoteForm() {
               <div className="flex-1 space-y-5">
                 {/* Summary cards */}
                 {planCompareRows.length > 0 && (
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <motion.div
+                    className="grid gap-3 sm:grid-cols-3"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                  >
                     <div className="rounded-lg p-4" style={{ boxShadow: shadowCard }}>
                       <p className="text-xs text-[#808080]">Mejor cuota estimada</p>
                       <p
@@ -1177,7 +1242,7 @@ export function QuoteForm() {
                         {isParticular ? "Particular" : "Obra social"}
                       </p>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* Error */}
@@ -1224,12 +1289,16 @@ export function QuoteForm() {
                         </tr>
                       </thead>
                       <tbody>
-                        {planCompareRows.map((row) => {
+                        {planCompareRows.map((row, rowIdx) => {
                           const isBest =
                             row.result != null && bestTotal != null && row.result.total === bestTotal;
                           return (
-                            <tr
+                            <motion.tr
                               key={row.plan.id}
+                              custom={rowIdx}
+                              variants={fadeUp}
+                              initial="hidden"
+                              animate="show"
                               style={{ borderBottom: "1px solid #ebebeb" }}
                               className="last:border-0"
                             >
@@ -1306,7 +1375,7 @@ export function QuoteForm() {
                                   </button>
                                 )}
                               </td>
-                            </tr>
+                            </motion.tr>
                           );
                         })}
                       </tbody>
@@ -1440,6 +1509,9 @@ export function QuoteForm() {
                 })}
               </div>
             )}
+
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           {/* ════════════════════ NAVIGATION FOOTER ════════════════════ */}

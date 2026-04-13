@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
 import { cn } from "@/lib/utils";
 import { AuthButtons } from "@/components/auth/AuthButtons";
 
@@ -16,19 +15,31 @@ export function Navbar() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/70 backdrop-blur">
+    <header
+      className="sticky top-0 z-50 bg-white/80 backdrop-blur-md"
+      style={{ boxShadow: "rgba(0,0,0,0.08) 0px 0px 0px 1px" }}
+    >
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4">
+
+        {/* Brand */}
         <Link
           href="/"
-          className="flex items-center gap-2 text-sm font-semibold tracking-tight"
+          className="flex items-center gap-2.5 text-sm font-semibold text-[#171717] transition-opacity hover:opacity-70"
+          style={{ letterSpacing: "-0.32px" }}
         >
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-muted/40">
+          <span
+            className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#171717] text-xs font-semibold text-white"
+          >
             M
           </span>
           <span className="hidden sm:inline">Magenta</span>
         </Link>
 
-        <nav className="flex items-center gap-1 rounded-full border border-border bg-card p-1 shadow-sm">
+        {/* Nav pills */}
+        <nav
+          className="flex items-center gap-0.5 rounded-full bg-[#fafafa] p-1"
+          style={{ boxShadow: "rgba(0,0,0,0.08) 0px 0px 0px 1px" }}
+        >
           {navItems.map((it) => {
             const active = pathname === it.href;
             return (
@@ -36,9 +47,10 @@ export function Navbar() {
                 key={it.href}
                 href={it.href}
                 className={cn(
-                  "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                  "text-muted-foreground hover:text-foreground",
-                  active && "bg-muted text-foreground",
+                  "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150",
+                  active
+                    ? "bg-[#171717] text-white"
+                    : "text-[#666666] hover:bg-[#ebebeb] hover:text-[#171717]",
                 )}
               >
                 {it.label}
@@ -47,6 +59,7 @@ export function Navbar() {
           })}
         </nav>
 
+        {/* Auth */}
         <div className="hidden sm:block">
           <AuthButtons />
         </div>
@@ -54,4 +67,3 @@ export function Navbar() {
     </header>
   );
 }
-
