@@ -3,10 +3,20 @@ export interface Member {
   age: number;
 }
 
+export interface PlanDiscountLine {
+  label: string;
+  value: number;
+}
+
 export interface QuoteRequest {
   members: Member[];
   isParticular: boolean;
   contributions: number;
+  /**
+   * Descuentos comerciales sobre el subtotal del plan (tarifario + descuentos
+   * automáticos del prestador). Se aplican antes de restar aportes.
+   */
+  commercialDiscounts?: PlanDiscountLine[];
 }
 
 export interface QuoteResult {

@@ -127,6 +127,7 @@ function buildResult(params: {
     assertNonNegativeNumber(`discount '${d.label}'`, d.value);
   }
 
+  // Orden fijo: subtotal plan → todos los descuentos (tarifario / automáticos / comerciales) → aportes
   const discountsTotal = sum(params.discounts.map((d) => d.value));
   const subtotalAfterDiscounts = Math.max(0, params.basePrice - discountsTotal);
   const totalAfterContributions = Math.max(
@@ -181,6 +182,25 @@ function validateRequest(req: QuoteRequest): void {
   if (holder.length !== 1) {
     throw new Error("Debe existir exactamente un Titular (role='holder')");
   }
+  for (const d of req.commercialDiscounts ?? []) {
+    if (!Number.isFinite(d.value) || d.value < 0) {
+      throw new Error(`Descuento comercial inválido: ${d.label}`);
+    }
+  }
+}
+
+/** Descuentos de gestión comercial: mismo orden que tarifario (antes de aportes). */
+function withCommercialDiscounts(
+  strategyDiscounts: { label: string; value: number }[],
+  req: QuoteRequest,
+): { label: string; value: number }[] {
+  const extra = (req.commercialDiscounts ?? [])
+    .filter((d) => Number.isFinite(d.value) && d.value > 0)
+    .map((d) => ({
+      label: d.label.trim() || "Descuento comercial",
+      value: clampMoney(d.value),
+    }));
+  return [...strategyDiscounts, ...extra];
 }
 
 export class MedifeStrategy implements DetailedQuoteStrategy {
@@ -284,7 +304,7 @@ export class MedifeStrategy implements DetailedQuoteStrategy {
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: [],
+      discounts: withCommercialDiscounts([], req),
       contributions: req.contributions,
     });
   }
@@ -392,7 +412,7 @@ export class OmintStrategy implements DetailedQuoteStrategy {
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: [],
+      discounts: withCommercialDiscounts([], req),
       contributions: req.contributions,
     });
   }
@@ -482,7 +502,7 @@ export class OspadepStrategy implements DetailedQuoteStrategy {
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts,
+      discounts: withCommercialDiscounts(discounts, req),
       contributions: req.contributions,
     });
   }
@@ -524,7 +544,7 @@ export class SwissStrategy implements DetailedQuoteStrategy {
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: [],
+      discounts: withCommercialDiscounts([], req),
       contributions: req.contributions,
     });
   }

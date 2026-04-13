@@ -212,6 +212,8 @@ def parse_swiss(ws, plan_names: list[str], provider_slug: str = "swiss-medical")
     aliases = {
         "SBO4": "SB04",
         "SB04": "SB04",
+        "SBO2": "SB02",
+        "SB02": "SB02",
     }
 
     # Buscar fila de headers con plan names

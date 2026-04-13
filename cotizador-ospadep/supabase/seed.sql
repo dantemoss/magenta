@@ -1813,8 +1813,9 @@ where p.slug = 'swiss-medical'
   and pl.name = 'PO64'
   and pl.type = 'SWISS'
 on conflict do nothing;
+-- Swiss SB02: se agrega banda 0-65 (faltaba → error titular <66). Banda 66+ reemplaza importes erróneos del parse (~78% de SB04; validar en tarifario).
 insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
-select pl.id, 66, null, 'conyuge'::public.price_role, 4647.00, false
+select pl.id, 0, 65, 'conyuge'::public.price_role, 175623.09, false
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'
@@ -1822,7 +1823,7 @@ where p.slug = 'swiss-medical'
   and pl.type = 'SWISS'
 on conflict do nothing;
 insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
-select pl.id, 66, null, 'familiar_cargo'::public.price_role, 4647.00, false
+select pl.id, 0, 65, 'familiar_cargo'::public.price_role, 175623.09, false
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'
@@ -1830,7 +1831,7 @@ where p.slug = 'swiss-medical'
   and pl.type = 'SWISS'
 on conflict do nothing;
 insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
-select pl.id, 66, null, 'individual'::public.price_role, 4647.00, false
+select pl.id, 0, 65, 'individual'::public.price_role, 175623.09, false
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'
@@ -1838,7 +1839,39 @@ where p.slug = 'swiss-medical'
   and pl.type = 'SWISS'
 on conflict do nothing;
 insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
-select pl.id, 66, null, 'primer_hijo'::public.price_role, 4647.00, false
+select pl.id, 0, 65, 'primer_hijo'::public.price_role, 175623.09, false
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict do nothing;
+insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
+select pl.id, 66, null, 'conyuge'::public.price_role, 480261.19, false
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict do nothing;
+insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
+select pl.id, 66, null, 'familiar_cargo'::public.price_role, 480261.19, false
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict do nothing;
+insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
+select pl.id, 66, null, 'individual'::public.price_role, 480261.19, false
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict do nothing;
+insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)
+select pl.id, 66, null, 'primer_hijo'::public.price_role, 480261.19, false
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'

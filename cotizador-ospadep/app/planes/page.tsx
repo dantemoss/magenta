@@ -7,6 +7,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
 import { monthStartISO } from "@/lib/month";
 import type { PriceRole, PriceRow } from "@/lib/engine/strategies";
+import { providerLogoSrc } from "@/lib/provider-logos";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,15 +30,6 @@ import { Separator } from "@/components/ui/separator";
 
 type ProviderRow = { id: string; name: string; slug: string };
 type PlanRow = { id: string; provider_id: string; name: string; type: string };
-
-function logoSrcForProviderSlug(slug: string): string | null {
-  const s = slug.toLowerCase();
-  if (s === "medife") return "/MEDIFE.png";
-  if (s === "omint") return "/Omint.png";
-  if (s === "ospadep") return "/OSPADEP.png";
-  if (s === "swiss-medical") return "/SwissMedical.png";
-  return null;
-}
 
 function roleLabel(role: PriceRole): string {
   const map: Record<PriceRole, string> = {
@@ -255,7 +247,7 @@ export default function PlanPricesPage() {
           ) : (
             filteredPlans.map((pl) => {
               const prov = providerById.get(pl.provider_id);
-              const logoSrc = prov ? logoSrcForProviderSlug(prov.slug) : null;
+              const logoSrc = prov ? providerLogoSrc(prov.slug) : null;
               const rows = pricesByPlanId[pl.id] ?? [];
 
               return (

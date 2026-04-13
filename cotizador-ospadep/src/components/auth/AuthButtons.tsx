@@ -31,13 +31,14 @@ export function AuthButtons() {
     };
   }, []);
 
-  if (!supabase) return null;
+  const client = supabase;
+  if (!client) return null;
 
   return signedIn ? (
     <Button
       variant="outline"
       onClick={async () => {
-        await supabase.auth.signOut();
+        await client.auth.signOut();
       }}
     >
       Salir
