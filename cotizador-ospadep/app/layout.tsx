@@ -12,7 +12,7 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Magenta · Cotizador",
+  title: "OSPADEP · Cotizador",
   description: "Cotizaciones rápidas con desglose por plan y grupo familiar",
 };
 

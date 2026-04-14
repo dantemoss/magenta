@@ -1,5 +1,6 @@
 import {
   Document,
+  Image,
   Page,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ export type ComparisonPdfRowInput = {
 
 export type ComparisonPdfInput = {
   title: string;
+  logoSrc?: string;
   effectiveMonthLabel: string;
   generatedAtLabel: string;
   scopeLabel: string;
@@ -36,6 +38,17 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontFamily: "Helvetica",
     color: "#171717",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  logo: {
+    width: 140,
+    height: 33,
+    objectFit: "contain",
   },
   title: {
     fontSize: 16,
@@ -115,6 +128,9 @@ export function ComparisonPdfDocument(props: ComparisonPdfInput) {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {props.logoSrc ? <Image src={props.logoSrc} style={styles.logo} /> : null}
+        </View>
         <Text style={styles.title}>{props.title}</Text>
         <Text style={styles.subtitle}>
           Vigencia tarifaria: {props.effectiveMonthLabel} · Generado:{" "}

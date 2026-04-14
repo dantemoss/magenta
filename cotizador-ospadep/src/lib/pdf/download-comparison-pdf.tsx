@@ -53,6 +53,7 @@ export async function downloadComparisonPdf(params: {
 }): Promise<void> {
   const monthLabel = params.effectiveMonthISO.slice(0, 7);
   const now = new Date();
+  const logoSrc = `${window.location.origin}/LOGO%20OSPADEP_04.png`;
   const generatedAtLabel = now.toLocaleString("es-AR", {
     dateStyle: "short",
     timeStyle: "short",
@@ -93,6 +94,7 @@ export async function downloadComparisonPdf(params: {
 
   const input: ComparisonPdfInput = {
     title: "Propuesta comercial — comparativa de planes",
+    logoSrc,
     effectiveMonthLabel: monthLabel,
     generatedAtLabel,
     scopeLabel: params.scopeLabel,

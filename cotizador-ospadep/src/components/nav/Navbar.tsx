@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -27,12 +28,15 @@ export function Navbar() {
           className="flex items-center gap-2.5 text-sm font-semibold text-[#171717] transition-opacity hover:opacity-70"
           style={{ letterSpacing: "-0.32px" }}
         >
-          <span
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#171717] text-xs font-semibold text-white"
-          >
-            M
-          </span>
-          <span className="hidden sm:inline">Magenta</span>
+          <Image
+            src="/LOGO%20OSPADEP_04.png"
+            alt="OSPADEP"
+            width={152}
+            height={36}
+            className="h-9 w-auto object-contain"
+            priority
+          />
+          
         </Link>
 
         {/* Nav pills */}

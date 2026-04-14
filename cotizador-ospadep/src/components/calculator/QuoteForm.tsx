@@ -42,17 +42,114 @@ import { Switch } from "@/components/ui/switch";
 
 const formSchema = z
   .object({
-    holderAge: z.coerce.number().int().min(0).max(120),
+    holderAge: z.preprocess(
+      (v) => {
+        if (v === "" || v == null) return undefined;
+        if (typeof v === "string") {
+          const digits = v.replace(/\D/g, "");
+          if (digits === "") return undefined;
+          return Number(digits);
+        }
+        return v;
+      },
+      z
+        .number({ required_error: "Ingresá la edad del titular", invalid_type_error: "Edad inválida" })
+        .int()
+        .min(18, "El titular debe ser mayor de 18 años")
+        .max(120),
+    ),
     hasSpouse: z.boolean(),
-    spouseAge: z.coerce.number().int().min(0).max(120).optional(),
-    children: z.array(z.object({ age: z.coerce.number().int().min(0).max(120) })),
+    spouseAge: z.preprocess(
+      (v) => {
+        if (v === "" || v == null) return undefined;
+        if (typeof v === "string") {
+          const digits = v.replace(/\D/g, "");
+          if (digits === "") return undefined;
+          return Number(digits);
+        }
+        return v;
+      },
+      z
+        .number({ invalid_type_error: "Edad inválida" })
+        .int()
+        .min(18, "El cónyuge debe ser mayor de 18 años")
+        .max(120)
+        .optional(),
+    ),
+    children: z.array(
+      z.object({
+        age: z.preprocess(
+          (v) => {
+            if (v === "" || v == null) return undefined;
+            if (typeof v === "string") {
+              const digits = v.replace(/\D/g, "");
+              if (digits === "") return undefined;
+              return Number(digits);
+            }
+            return v;
+          },
+          z
+            .number({
+              required_error: "Ingresá la edad del menor",
+              invalid_type_error: "Edad inválida",
+            })
+            .int()
+            .min(0)
+            .max(120),
+        ),
+      }),
+    ),
     isParticular: z.boolean(),
     holderUsesGross: z.boolean(),
-    holderContribution: z.coerce.number().min(0),
-    holderGross: z.coerce.number().min(0),
+    holderContribution: z.preprocess(
+      (v) => {
+        if (v === "" || v == null) return undefined;
+        if (typeof v === "string") {
+          const digits = v.replace(/\D/g, "");
+          if (digits === "") return undefined;
+          return Number(digits);
+        }
+        return v;
+      },
+      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+    ),
+    holderGross: z.preprocess(
+      (v) => {
+        if (v === "" || v == null) return undefined;
+        if (typeof v === "string") {
+          const digits = v.replace(/\D/g, "");
+          if (digits === "") return undefined;
+          return Number(digits);
+        }
+        return v;
+      },
+      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+    ),
     spouseUsesGross: z.boolean(),
-    spouseContribution: z.coerce.number().min(0),
-    spouseGross: z.coerce.number().min(0),
+    spouseContribution: z.preprocess(
+      (v) => {
+        if (v === "" || v == null) return undefined;
+        if (typeof v === "string") {
+          const digits = v.replace(/\D/g, "");
+          if (digits === "") return undefined;
+          return Number(digits);
+        }
+        return v;
+      },
+      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+    ),
+    spouseGross: z.preprocess(
+      (v) => {
+        if (v === "" || v == null) return undefined;
+        if (typeof v === "string") {
+          const digits = v.replace(/\D/g, "");
+          if (digits === "") return undefined;
+          return Number(digits);
+        }
+        return v;
+      },
+      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+    ),
     commercialDiscounts: z.array(
       z.object({ label: z.string(), amount: z.coerce.number().min(0) }),
     ),
@@ -65,17 +162,42 @@ const formSchema = z
         message: "Ingresá la edad de la pareja",
       });
     }
-    if (!val.holderUsesGross && val.holderContribution < 0) {
+    if (val.holderUsesGross) {
+      if (typeof val.holderGross !== "number") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["holderGross"],
+          message: "Ingresá el sueldo bruto del titular",
+        });
+      } else if (val.holderGross < 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["holderGross"], message: "Sueldo bruto inválido" });
+      }
+    } else if (typeof val.holderContribution !== "number") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["holderContribution"],
+        message: "Ingresá el aporte directo del titular",
+      });
+    } else if (val.holderContribution < 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["holderContribution"], message: "Aportes inválidos" });
     }
-    if (val.holderUsesGross && val.holderGross < 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["holderGross"], message: "Sueldo bruto inválido" });
-    }
     if (val.hasSpouse) {
-      if (val.spouseUsesGross && val.spouseGross < 0) {
+      if (val.spouseUsesGross && typeof val.spouseGross !== "number") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["spouseGross"],
+          message: "Ingresá el sueldo bruto del cónyuge",
+        });
+      } else if (val.spouseUsesGross && val.spouseGross < 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["spouseGross"], message: "Sueldo bruto inválido" });
       }
-      if (!val.spouseUsesGross && val.spouseContribution < 0) {
+      if (!val.spouseUsesGross && typeof val.spouseContribution !== "number") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["spouseContribution"],
+          message: "Ingresá el aporte directo del cónyuge",
+        });
+      } else if (!val.spouseUsesGross && val.spouseContribution < 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["spouseContribution"], message: "Aportes inválidos" });
       }
     }
@@ -106,6 +228,25 @@ function friendlyQuoteError(msg: string): string {
   return msg;
 }
 
+const groupedNumberFormatter = new Intl.NumberFormat("es-AR");
+
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function parseDigitsToNumber(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  const raw = String(value);
+  const digits = digitsOnly(raw);
+  if (digits === "") return undefined;
+  return Number(digits);
+}
+
+function formatGroupedCurrency(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return `${groupedNumberFormatter.format(Math.trunc(value))}$`;
+}
+
 function strategyForProviderSlug(slug: string): QuoteStrategy {
   const s = slug.toLowerCase();
   if (s === "medife") return new MedifeStrategy();
@@ -117,13 +258,13 @@ function strategyForProviderSlug(slug: string): QuoteStrategy {
 
 function buildQuoteRequest(values: FormValues): QuoteRequest {
   const holderAporte = values.holderUsesGross
-    ? values.holderGross * 0.0765
-    : values.holderContribution;
+    ? (values.holderGross ?? 0) * 0.0765
+    : (values.holderContribution ?? 0);
   const spouseAporte =
     values.hasSpouse && typeof values.spouseAge === "number"
       ? values.spouseUsesGross
-        ? values.spouseGross * 0.0765
-        : values.spouseContribution
+        ? (values.spouseGross ?? 0) * 0.0765
+        : (values.spouseContribution ?? 0)
       : 0;
 
   const members: QuoteRequest["members"] = [{ role: "holder", age: values.holderAge }];
@@ -248,17 +389,17 @@ export function QuoteForm() {
     resolver: zodResolver(formSchema),
     mode: "onChange",
     defaultValues: {
-      holderAge: 30,
+      holderAge: undefined,
       hasSpouse: false,
       spouseAge: undefined,
       children: [],
       isParticular: false,
       holderUsesGross: true,
-      holderContribution: 0,
-      holderGross: 0,
+      holderContribution: undefined,
+      holderGross: undefined,
       spouseUsesGross: true,
-      spouseContribution: 0,
-      spouseGross: 0,
+      spouseContribution: undefined,
+      spouseGross: undefined,
       commercialDiscounts: [],
     },
   });
@@ -267,9 +408,15 @@ export function QuoteForm() {
   const commercialDiscountsArray = useFieldArray({ control: form.control, name: "commercialDiscounts" });
 
   const hasSpouse = useWatch({ control: form.control, name: "hasSpouse" });
+  const holderAge = useWatch({ control: form.control, name: "holderAge" });
+  const spouseAge = useWatch({ control: form.control, name: "spouseAge" });
   const isParticular = useWatch({ control: form.control, name: "isParticular" });
   const holderUsesGross = useWatch({ control: form.control, name: "holderUsesGross" });
   const spouseUsesGross = useWatch({ control: form.control, name: "spouseUsesGross" });
+  const holderContribution = useWatch({ control: form.control, name: "holderContribution" });
+  const holderGross = useWatch({ control: form.control, name: "holderGross" });
+  const spouseContribution = useWatch({ control: form.control, name: "spouseContribution" });
+  const spouseGross = useWatch({ control: form.control, name: "spouseGross" });
 
   const selectedProvider = React.useMemo(
     () => providers.find((p) => p.id === selectedProviderId) ?? null,
@@ -386,10 +533,12 @@ export function QuoteForm() {
       if (idsToQuote.length === 0) {
         throw new Error(compareAllProviders ? "No hay planes cargados" : "Marcá al menos un plan");
       }
-      const holderAporte = values.holderUsesGross ? values.holderGross * 0.0765 : values.holderContribution;
+      const holderAporte = values.holderUsesGross
+        ? (values.holderGross ?? 0) * 0.0765
+        : (values.holderContribution ?? 0);
       const spouseAporte =
         values.hasSpouse && typeof values.spouseAge === "number"
-          ? values.spouseUsesGross ? values.spouseGross * 0.0765 : values.spouseContribution
+          ? values.spouseUsesGross ? (values.spouseGross ?? 0) * 0.0765 : (values.spouseContribution ?? 0)
           : 0;
       const req = buildQuoteRequest(values);
       setLastInputs({ holderAporte, spouseAporte, members: req.members });
@@ -526,6 +675,10 @@ export function QuoteForm() {
     const total = h + s;
     return Number.isFinite(total) ? total : 0;
   }, [watchedValues]);
+  const holderAmountField = holderUsesGross ? "holderGross" : "holderContribution";
+  const spouseAmountField = spouseUsesGross ? "spouseGross" : "spouseContribution";
+  const holderAmountValue = holderUsesGross ? holderGross : holderContribution;
+  const spouseAmountValue = spouseUsesGross ? spouseGross : spouseContribution;
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -544,7 +697,7 @@ export function QuoteForm() {
           {/* Brand */}
           <div className="mb-10">
             <p className="text-xl font-semibold tracking-tight text-[#171717]" style={{ letterSpacing: "-0.96px" }}>
-              Magenta.
+              OSPADEP
             </p>
             <p className="mt-0.5 text-xs text-[#808080]">Cotizador de planes</p>
           </div>
@@ -880,15 +1033,16 @@ export function QuoteForm() {
                   </Label>
                   <Input
                     id="holderAge"
-                    type="number"
+                    type="text"
                     inputMode="numeric"
-                    min={0}
-                    max={120}
-                    className="h-10 border-0 bg-white"
+                    autoComplete="off"
+                    placeholder="Ej. 35"
+                    className="h-11 rounded-xl border-0 bg-white text-sm placeholder:text-[#b0b0b0]"
                     style={{ boxShadow: shadowInput }}
-                    {...form.register("holderAge")}
+                    value={typeof holderAge === "number" && Number.isFinite(holderAge) ? String(holderAge) : ""}
                     onChange={(e) => {
-                      void form.register("holderAge").onChange(e);
+                      const digits = digitsOnly(e.target.value).slice(0, 3);
+                      form.setValue("holderAge", parseDigitsToNumber(digits), { shouldValidate: true, shouldDirty: true });
                       setPlanCompareRows([]);
                     }}
                   />
@@ -932,15 +1086,16 @@ export function QuoteForm() {
                     </Label>
                     <Input
                       id="spouseAge"
-                      type="number"
+                      type="text"
                       inputMode="numeric"
-                      min={0}
-                      max={120}
-                      className="h-10 border-0 bg-white"
+                      autoComplete="off"
+                      placeholder="Ej. 33"
+                      className="h-11 rounded-xl border-0 bg-white text-sm placeholder:text-[#b0b0b0]"
                       style={{ boxShadow: shadowInput }}
-                      {...form.register("spouseAge")}
+                      value={typeof spouseAge === "number" && Number.isFinite(spouseAge) ? String(spouseAge) : ""}
                       onChange={(e) => {
-                        void form.register("spouseAge").onChange(e);
+                        const digits = digitsOnly(e.target.value).slice(0, 3);
+                        form.setValue("spouseAge", parseDigitsToNumber(digits), { shouldValidate: true, shouldDirty: true });
                         setPlanCompareRows([]);
                       }}
                     />
@@ -968,7 +1123,7 @@ export function QuoteForm() {
                       size="sm"
                       className="shrink-0 border-0 text-xs"
                       style={{ boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.10)" }}
-                      onClick={() => { childrenArray.append({ age: 0 }); setPlanCompareRows([]); }}
+                      onClick={() => { childrenArray.append({ age: undefined }); setPlanCompareRows([]); }}
                     >
                       + Agregar
                     </Button>
@@ -991,16 +1146,26 @@ export function QuoteForm() {
                               </Label>
                               <Input
                                 id={`childAge-${field.id}`}
-                                type="number"
+                                type="text"
                                 inputMode="numeric"
-                                min={0}
-                                max={120}
-                                className="h-9 border-0 bg-white"
+                                autoComplete="off"
+                                placeholder="Edad"
+                                className="h-10 rounded-xl border-0 bg-white text-sm placeholder:text-[#b0b0b0]"
                                 style={{ boxShadow: shadowInput }}
-                                defaultValue={String(field.age ?? 0)}
-                                {...form.register(path)}
+                                defaultValue={field.age == null ? "" : String(field.age)}
+                                {...form.register(path, {
+                                  setValueAs: (v) => {
+                                    const parsed = parseDigitsToNumber(v);
+                                    return parsed;
+                                  },
+                                })}
                                 onChange={(e) => {
-                                  void form.register(path).onChange(e);
+                                  const digits = digitsOnly(e.target.value).slice(0, 3);
+                                  e.target.value = digits;
+                                  form.setValue(path, parseDigitsToNumber(digits), {
+                                    shouldValidate: true,
+                                    shouldDirty: true,
+                                  });
                                   setPlanCompareRows([]);
                                 }}
                               />
@@ -1051,15 +1216,19 @@ export function QuoteForm() {
                       </Label>
                       <Input
                         id={holderUsesGross ? "holderGross" : "holderContribution"}
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="0.01"
-                        className="h-10 border-0 bg-white"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="$"
+                        className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-[#b0b0b0]"
                         style={{ boxShadow: shadowInput }}
-                        {...form.register(holderUsesGross ? "holderGross" : "holderContribution")}
+                        value={formatGroupedCurrency(holderAmountValue)}
                         onChange={(e) => {
-                          void form.register(holderUsesGross ? "holderGross" : "holderContribution").onChange(e);
+                          const parsed = parseDigitsToNumber(e.target.value);
+                          form.setValue(holderAmountField, parsed, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
                           setPlanCompareRows([]);
                         }}
                       />
@@ -1094,16 +1263,20 @@ export function QuoteForm() {
                       </Label>
                       <Input
                         id={spouseUsesGross ? "spouseGross" : "spouseContribution"}
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="0.01"
-                        className="h-10 border-0 bg-white"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="$"
+                        className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-[#b0b0b0]"
                         style={{ boxShadow: shadowInput }}
-                        {...form.register(spouseUsesGross ? "spouseGross" : "spouseContribution")}
+                        value={formatGroupedCurrency(spouseAmountValue)}
                         disabled={!hasSpouse}
                         onChange={(e) => {
-                          void form.register(spouseUsesGross ? "spouseGross" : "spouseContribution").onChange(e);
+                          const parsed = parseDigitsToNumber(e.target.value);
+                          form.setValue(spouseAmountField, parsed, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
                           setPlanCompareRows([]);
                         }}
                       />
@@ -1117,13 +1290,11 @@ export function QuoteForm() {
                     Total aportes (calculado)
                   </Label>
                   <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step="0.01"
-                    className="h-10 border-0 bg-[#fafafa]"
+                    type="text"
+                    inputMode="numeric"
+                    className="h-11 rounded-xl border-0 bg-[#fafafa] text-sm font-medium tabular-nums"
                     style={{ boxShadow: shadowBorder }}
-                    value={totalAportes}
+                    value={formatMoney(totalAportes)}
                     readOnly
                   />
                   <p className="text-xs text-[#808080]">
@@ -1176,13 +1347,19 @@ export function QuoteForm() {
                             <Input
                               className="h-9 border-0 bg-white"
                               style={{ boxShadow: shadowInput }}
-                              type="number"
-                              inputMode="decimal"
-                              min={0}
-                              step="0.01"
-                              {...form.register(`commercialDiscounts.${idx}.amount`)}
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="$"
+                              {...form.register(`commercialDiscounts.${idx}.amount`, {
+                                setValueAs: (v) => parseDigitsToNumber(v) ?? 0,
+                              })}
                               onChange={(e) => {
-                                void form.register(`commercialDiscounts.${idx}.amount`).onChange(e);
+                                const digits = digitsOnly(e.target.value);
+                                e.target.value = digits;
+                                form.setValue(`commercialDiscounts.${idx}.amount`, parseDigitsToNumber(digits) ?? 0, {
+                                  shouldValidate: true,
+                                  shouldDirty: true,
+                                });
                                 setPlanCompareRows([]);
                               }}
                             />
