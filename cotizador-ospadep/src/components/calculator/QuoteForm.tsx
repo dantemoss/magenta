@@ -371,7 +371,7 @@ export function QuoteForm() {
   const [expandedPlanId, setExpandedPlanId] = React.useState<string | null>(null);
   const [currentStep, setCurrentStep] = React.useState(0);
   const [stepDir, setStepDir] = React.useState(1);
-  const effectiveMonth = React.useMemo(() => monthStartISO(), []);
+  const [effectiveMonth, setEffectiveMonth] = React.useState<string>(() => monthStartISO());
 
   const [providers, setProviders] = React.useState<ProviderRow[]>([]);
   const [plans, setPlans] = React.useState<PlanRow[]>([]);
@@ -453,17 +453,34 @@ export function QuoteForm() {
         return;
       }
       try {
-        const { data: provs, error: provErr } = await supabase
-          .from("providers")
-          .select("id,name,slug")
-          .order("name");
+        const [
+          { data: provs, error: provErr },
+          { data: pls, error: planErr },
+          { data: latestMonthRaw, error: monthErr },
+          { data: activeSettingRaw, error: settingErr },
+        ] = await Promise.all([
+          supabase.from("providers").select("id,name,slug").order("name"),
+          supabase.from("plans").select("id,provider_id,name,type").order("name"),
+          supabase
+            .from("prices")
+            .select("effective_month")
+            .order("effective_month", { ascending: false })
+            .limit(1),
+          supabase
+            .from("app_settings")
+            .select("value_text")
+            .eq("key", "active_effective_month")
+            .maybeSingle(),
+        ]);
         if (provErr) throw provErr;
-
-        const { data: pls, error: planErr } = await supabase
-          .from("plans")
-          .select("id,provider_id,name,type")
-          .order("name");
         if (planErr) throw planErr;
+        if (monthErr) throw monthErr;
+        if (
+          settingErr &&
+          !["PGRST116", "PGRST205", "42P01"].includes((settingErr as { code?: string }).code ?? "")
+        ) {
+          throw settingErr;
+        }
 
         if (!alive) return;
         const provList = (provs ?? []) as ProviderRow[];
@@ -471,6 +488,14 @@ export function QuoteForm() {
 
         setProviders(provList);
         setPlans(planList);
+
+        const latestMonth = String((latestMonthRaw?.[0] as { effective_month?: unknown } | undefined)?.effective_month ?? "");
+        const activeMonth = String((activeSettingRaw as { value_text?: unknown } | null)?.value_text ?? "");
+        if (/^\d{4}-\d{2}-\d{2}$/.test(activeMonth)) {
+          setEffectiveMonth(activeMonth);
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(latestMonth)) {
+          setEffectiveMonth(latestMonth);
+        }
 
         const initialProviderId = provList[0]?.id ?? "";
         setSelectedProviderId(initialProviderId);
