@@ -9,6 +9,7 @@ create extension if not exists pgcrypto;
 
 -- 1) Columna de vigencia mensual y auditoría en prices
 alter table public.prices
+  add column if not exists id uuid default gen_random_uuid(),
   add column if not exists effective_month date,
   add column if not exists updated_at timestamptz,
   add column if not exists updated_by uuid,
@@ -20,9 +21,29 @@ set effective_month = date_trunc('month', now())::date
 where effective_month is null;
 
 alter table public.prices
+  alter column id set not null,
   alter column effective_month set not null;
 
--- Unique por fila y mes (evita duplicados y permite idempotencia)
+-- Migrar PK histórica a PK por id (evita choque entre vigencias mensuales)
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public'
+      and t.relname = 'prices'
+      and c.conname = 'prices_pkey'
+  ) then
+    alter table public.prices drop constraint prices_pkey;
+  end if;
+end $$;
+
+alter table public.prices
+  add constraint prices_pkey primary key (id);
+
+-- Unique por fila y mes (evita duplicados y permite idempotencia de batches)
 create unique index if not exists prices_unique_month
 on public.prices(plan_id, role, age_min, age_max, is_particular, effective_month);
 
@@ -195,22 +216,22 @@ begin
   ),
   rows_out as (
     select
-      plan_id,
-      role,
-      age_min,
-      case when age_max_norm = -1 then null else age_max_norm end as age_max,
-      is_particular,
-      old_price,
-      round(old_price * (1 + pct/100.0), 2) as new_price,
-      pct,
-      scope
-    from scoped
-    where scope_ok and pct <> 0
+      s.plan_id,
+      s.role,
+      s.age_min,
+      case when s.age_max_norm = -1 then null else s.age_max_norm end as age_max,
+      s.is_particular,
+      s.old_price,
+      round(s.old_price * (1 + s.pct/100.0), 2) as new_price,
+      s.pct,
+      s.scope
+    from scoped s
+    where s.scope_ok and s.pct <> 0
   ),
   counted as (
-    select *, count(*) over() as total_rows
-    from rows_out
-    order by plan_id, role, age_min
+    select ro.*, count(*) over() as total_rows
+    from rows_out ro
+    order by ro.plan_id, ro.role, ro.age_min
   )
   select *
   from counted
@@ -277,18 +298,18 @@ begin
   ),
   rows_to_write as (
     select
-      plan_id,
-      role,
-      age_min,
-      age_max,
-      is_particular,
-      round(old_price * (1 + pct/100.0), 2) as price,
+      s.plan_id,
+      s.role,
+      s.age_min,
+      s.age_max,
+      s.is_particular,
+      round(s.old_price * (1 + s.pct/100.0), 2) as price,
       public.month_start(b.target_month) as effective_month,
       now() as updated_at,
       auth.uid() as updated_by,
       batch as batch_id
-    from scoped
-    where scope_ok and pct <> 0
+    from scoped s
+    where s.scope_ok and s.pct <> 0
   ),
   upserted as (
     insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at, updated_by, batch_id)

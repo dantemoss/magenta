@@ -10,6 +10,7 @@ import type { PriceRow } from "@/lib/engine/strategies";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { HexagonPattern } from "@/components/ui/hexagon-pattern";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -81,6 +82,7 @@ export default function AdminPricesPage() {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     return nextMonthInput(`${y}-${m}`);
   });
+  const [pricesMonthFilter, setPricesMonthFilter] = React.useState<string>(targetMonth);
   const [pct, setPct] = React.useState<string>("0");
   const [scope, setScope] = React.useState<"both" | "particular" | "no_particular">(
     "both",
@@ -113,6 +115,7 @@ export default function AdminPricesPage() {
           supabase
             .from("prices")
             .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
+            .order("effective_month", { ascending: false })
             .order("plan_id")
             .order("role")
             .order("age_min"),
@@ -153,14 +156,43 @@ export default function AdminPricesPage() {
 
   const filteredPrices = React.useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return prices;
-    return prices.filter((r) => {
+    const monthFiltered =
+      pricesMonthFilter === "all"
+        ? prices
+        : prices.filter((r) => (r.effective_month ?? "").slice(0, 7) === pricesMonthFilter);
+    if (!q) return monthFiltered;
+    return monthFiltered.filter((r) => {
       const pl = planById.get(r.plan_id);
       const prov = pl ? providerById.get(pl.provider_id) : null;
       const hay = `${prov?.name ?? ""} ${pl?.name ?? ""} ${pl?.type ?? ""} ${r.role}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [prices, filter, planById, providerById]);
+  }, [prices, pricesMonthFilter, filter, planById, providerById]);
+
+  const availablePriceMonths = React.useMemo(() => {
+    return [...new Set(prices.map((r) => (r.effective_month ?? "").slice(0, 7)).filter(Boolean))]
+      .sort((a, b) => b.localeCompare(a));
+  }, [prices]);
+
+  const duplicatedRowsInSameMonth = React.useMemo(() => {
+    const counter = new Map<string, number>();
+    for (const r of prices) {
+      const k = [
+        r.plan_id,
+        String(r.role),
+        String(r.age_min),
+        r.age_max == null ? "null" : String(r.age_max),
+        r.is_particular ? "1" : "0",
+        (r.effective_month ?? "").slice(0, 7),
+      ].join("|");
+      counter.set(k, (counter.get(k) ?? 0) + 1);
+    }
+    let duplicates = 0;
+    for (const n of counter.values()) {
+      if (n > 1) duplicates += n - 1;
+    }
+    return duplicates;
+  }, [prices]);
 
   const plansForSelectedProvider = React.useMemo(() => {
     if (providerId === "all") return plans;
@@ -250,6 +282,7 @@ export default function AdminPricesPage() {
       const { data: prs, error: prErr } = await supabase
         .from("prices")
         .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
+        .order("effective_month", { ascending: false })
         .order("plan_id")
         .order("role")
         .order("age_min");
@@ -270,314 +303,392 @@ export default function AdminPricesPage() {
   }
 
   return (
-    <main className="flex-1 bg-zinc-50 px-4 py-10 dark:bg-black">
-      <div className="mx-auto w-full max-w-6xl space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Administración · Precios</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Actualizá precios por mes, rápido y sin errores.
-            </p>
+    <main className="relative flex-1 overflow-hidden bg-[#f6f7f9] px-4 py-8">
+      <HexagonPattern className="pointer-events-none absolute inset-0 text-neutral-300/35 [mask-image:radial-gradient(85%_60%_at_50%_15%,white,transparent)]" />
+      <div className="mx-auto w-full max-w-7xl space-y-6">
+        <section className="relative overflow-hidden rounded-2xl bg-white px-6 py-6 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_24px_-16px_rgba(0,0,0,0.18)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[#7a7a7a]">
+                Panel interno
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight text-[#171717]">
+                Administración de precios
+              </h1>
+              <p className="text-sm text-[#5c5c5c]">
+                Prepará un lote, revisá el impacto y aplicá solo cuando esté validado.
+              </p>
+            </div>
+            <Badge variant="secondary" className="rounded-full px-3 py-1">
+              Acceso administrador
+            </Badge>
           </div>
-          <Badge variant="secondary">Acceso administrador</Badge>
-        </div>
-
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle>Actualizar precios</CardTitle>
-            <CardDescription>
-              Elegí de qué mes copiar los valores, definí el % y aplicalo al mes siguiente.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Mes base</Label>
-              <Input
-                type="month"
-                value={sourceMonth}
-                onChange={(e) => setSourceMonth(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">De acá se toman los valores.</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-[#fafafa] px-4 py-3">
+              <p className="text-xs text-[#7a7a7a]">Prestadores cargados</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-[#171717]">{providers.length}</p>
             </div>
-            <div className="space-y-2">
-              <Label>Mes a actualizar</Label>
-              <Input
-                type="month"
-                value={targetMonth}
-                onChange={(e) => setTargetMonth(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">Se crean los precios para este mes.</p>
+            <div className="rounded-xl bg-[#fafafa] px-4 py-3">
+              <p className="text-xs text-[#7a7a7a]">Planes disponibles</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-[#171717]">{plans.length}</p>
             </div>
-            <div className="space-y-2">
-              <Label>Ajuste (%)</Label>
-              <Input
-                inputMode="decimal"
-                value={pct}
-                onChange={(e) => setPct(e.target.value)}
-                placeholder="Ej: 7,5"
-              />
-              <p className="text-xs text-muted-foreground">
-                Usá negativo si es descuento. Ej: -3.
-              </p>
+            <div className="rounded-xl bg-[#fafafa] px-4 py-3">
+              <p className="text-xs text-[#7a7a7a]">Registros de precios</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-[#171717]">{prices.length}</p>
             </div>
-
-            <div className="space-y-2">
-              <Label>Elegir prestador</Label>
-              <Select
-                value={providerId}
-                onValueChange={(v) => {
-                  setProviderId(v);
-                  setPlanId("all");
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {providers.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Si elegís un plan, se actualiza solo ese plan.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Elegir plan (opcional)</Label>
-              <Select value={planId} onValueChange={setPlanId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {plansForSelectedProvider.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} ({p.type})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Tipo</Label>
-              <Select
-                value={scope}
-                onValueChange={(v) =>
-                  setScope(v as "both" | "particular" | "no_particular")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Ambos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="both">Ambos</SelectItem>
-                  <SelectItem value="no_particular">Obra social</SelectItem>
-                  <SelectItem value="particular">Particular</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 lg:col-span-3">
-              <Button onClick={createBatchAndPreview} disabled={loading || saving}>
-                {saving ? "Calculando…" : "Revisar cambios"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={applyBatch}
-                disabled={loading || saving || !lastBatchId}
-              >
-                {saving ? "Aplicando…" : "Aplicar actualización"}
-              </Button>
-              <Badge variant={lastBatchId ? "outline" : "secondary"}>
-                {lastBatchId ? "Cambios listos para aplicar" : "Primero revisá los cambios"}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {preview && preview.length > 0 ? (
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle>Revisión</CardTitle>
-                  <CardDescription>
-                    Ejemplos de cambios. Cantidad de precios a actualizar:{" "}
-                    <span className="font-medium tabular-nums">
-                      {preview[0]?.total_rows ?? preview.length}
-                    </span>
-                  </CardDescription>
-                </div>
-                <Badge variant="secondary">Antes → Después</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="grid grid-cols-[1fr_160px_120px_120px] gap-2 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-                  <div>Plan</div>
-                  <div className="text-right">Detalle</div>
-                  <div className="text-right">Antes</div>
-                  <div className="text-right">Después</div>
-                </div>
-                {preview.map((r, idx) => {
-                  const pl = planById.get(r.plan_id);
-                  const prov = pl ? providerById.get(pl.provider_id) : null;
-                  return (
-                    <div
-                      key={`${idx}-${r.plan_id}-${r.role}-${r.age_min}-${String(r.age_max)}-${String(
-                        r.is_particular,
-                      )}`}
-                      className="grid grid-cols-[1fr_160px_120px_120px] gap-2 px-3 py-2 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">
-                          {prov?.name ?? "Prestador"} · {pl?.name ?? r.plan_id}
-                        </div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {pl?.type ?? ""} · Ajuste {r.pct}%
-                        </div>
-                      </div>
-                      <div className="text-right text-xs text-muted-foreground tabular-nums">
-                        {r.role} · {r.age_min}–{r.age_max ?? "∞"}{" "}
-                        {r.is_particular ? "· Particular" : "· Obra social"}
-                      </div>
-                      <div className="text-right tabular-nums">{formatMoney(r.old_price)}</div>
-                      <div className="text-right tabular-nums font-medium">
-                        {formatMoney(r.new_price)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <Card>
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle>Historial</CardTitle>
-              <Badge variant="outline">{batches.length}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {batches.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin movimientos aún.</p>
-            ) : (
-              <div className="grid gap-2">
-                {batches.map((b) => (
-                  <div
-                    key={b.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium tabular-nums">
-                        {b.source_month.slice(0, 7)} → {b.target_month.slice(0, 7)}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">{b.notes ?? "-"}</div>
-                    </div>
-                    <Badge
-                      variant={
-                        b.status === "applied"
-                          ? "default"
-                          : b.status === "failed"
-                            ? "destructive"
-                            : "secondary"
-                      }
-                    >
-                      {b.status === "applied"
-                        ? "Aplicado"
-                        : b.status === "failed"
-                          ? "Falló"
-                          : "En preparación"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle>Buscar</CardTitle>
-            <CardDescription>Filtrá por prestador, plan o tipo.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Ej: OSPADEP, Plan Joven…"
-            />
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {error ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         ) : null}
 
-        <Card className="overflow-hidden">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle>Lista de precios</CardTitle>
-              <Badge variant="outline">{filteredPrices.length}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Cargando…</p>
-            ) : filteredPrices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin resultados.</p>
-            ) : (
-              <div className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="grid grid-cols-[1fr_160px_140px] gap-2 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-                  <div>Plan</div>
-                  <div className="text-right">Detalle</div>
-                  <div className="text-right">Precio</div>
+        <div className="grid gap-6 xl:grid-cols-12">
+          <section className="space-y-6 xl:col-span-8">
+            <Card className="rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Nueva actualización</CardTitle>
+                <CardDescription>
+                  Definí alcance y porcentaje para calcular una propuesta de actualización.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>Mes base</Label>
+                    <Input
+                      type="month"
+                      value={sourceMonth}
+                      onChange={(e) => setSourceMonth(e.target.value)}
+                      className="h-10 rounded-lg"
+                    />
+                    <p className="text-xs text-muted-foreground">Tomamos precios desde este período.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Mes destino</Label>
+                    <Input
+                      type="month"
+                      value={targetMonth}
+                      onChange={(e) => setTargetMonth(e.target.value)}
+                      className="h-10 rounded-lg"
+                    />
+                    <p className="text-xs text-muted-foreground">Se crea una nueva vigencia para este mes.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ajuste (%)</Label>
+                    <Input
+                      inputMode="decimal"
+                      value={pct}
+                      onChange={(e) => setPct(e.target.value)}
+                      placeholder="Ej: 7.5 o -3"
+                      className="h-10 rounded-lg"
+                    />
+                    <p className="text-xs text-muted-foreground">Positivo aumenta, negativo descuenta.</p>
+                  </div>
                 </div>
-                {filteredPrices.slice(0, 200).map((r, idx) => {
-                  const pl = planById.get(r.plan_id);
-                  const prov = pl ? providerById.get(pl.provider_id) : null;
-                  return (
-                    <div
-                      key={`${r.plan_id}-${idx}-${r.role}-${r.age_min}-${String(r.age_max)}-${String(
-                        r.is_particular,
-                      )}`}
-                      className="grid grid-cols-[1fr_160px_140px] gap-2 px-3 py-2 text-sm"
+
+                <Separator />
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>Prestador</Label>
+                    <Select
+                      value={providerId}
+                      onValueChange={(v) => {
+                        setProviderId(v);
+                        setPlanId("all");
+                      }}
                     >
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">
-                          {prov?.name ?? "Prestador"} · {pl?.name ?? r.plan_id}
-                        </div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {pl?.type ?? ""} {r.is_particular ? "· Particular" : ""}
-                        </div>
-                      </div>
-                      <div className="text-right text-xs text-muted-foreground tabular-nums">
-                        {String(r.role)} · {r.age_min}–{r.age_max ?? "∞"}
-                      </div>
-                      <div className="text-right font-medium tabular-nums">
-                        {formatMoney(r.price)}
-                      </div>
+                      <SelectTrigger className="h-10 rounded-lg">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {providers.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Filtrá por una entidad específica si hace falta.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Plan (opcional)</Label>
+                    <Select value={planId} onValueChange={setPlanId}>
+                      <SelectTrigger className="h-10 rounded-lg">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {plansForSelectedProvider.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name} ({p.type})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Si elegís plan, actualiza solo esa combinación.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Modalidad</Label>
+                    <Select
+                      value={scope}
+                      onValueChange={(v) =>
+                        setScope(v as "both" | "particular" | "no_particular")
+                      }
+                    >
+                      <SelectTrigger className="h-10 rounded-lg">
+                        <SelectValue placeholder="Ambos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="both">Ambos</SelectItem>
+                        <SelectItem value="no_particular">Obra social</SelectItem>
+                        <SelectItem value="particular">Particular</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Limitá por tipo de tarifario.</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button onClick={createBatchAndPreview} disabled={loading || saving} className="min-w-40">
+                    {saving ? "Calculando…" : "Revisar cambios"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={applyBatch}
+                    disabled={loading || saving || !lastBatchId}
+                    className="min-w-40"
+                  >
+                    {saving ? "Aplicando…" : "Aplicar actualización"}
+                  </Button>
+                  <Badge variant={lastBatchId ? "outline" : "secondary"} className="rounded-full">
+                    {lastBatchId ? "Cambios listos para aplicar" : "Primero revisá los cambios"}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            {preview && preview.length > 0 ? (
+              <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-lg">Previsualización del batch</CardTitle>
+                      <CardDescription>
+                        Muestra de cambios a aplicar. Total impactado:{" "}
+                        <span className="font-medium tabular-nums">
+                          {preview[0]?.total_rows ?? preview.length}
+                        </span>
+                      </CardDescription>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            <Separator />
-            <p className="text-xs text-muted-foreground">
-              Tip: usá “Revisar cambios” antes de aplicar, para evitar errores.
-            </p>
-          </CardContent>
-        </Card>
+                    <Badge variant="secondary">Antes → Después</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-hidden rounded-xl border border-border bg-white">
+                    <div className="grid grid-cols-[1fr_190px_120px_120px] gap-2 border-b border-border bg-[#fafafa] px-3 py-2 text-xs font-medium text-muted-foreground">
+                      <div>Plan</div>
+                      <div className="text-right">Detalle</div>
+                      <div className="text-right">Antes</div>
+                      <div className="text-right">Después</div>
+                    </div>
+                    <div className="max-h-[460px] overflow-y-auto">
+                      {preview.map((r, idx) => {
+                        const pl = planById.get(r.plan_id);
+                        const prov = pl ? providerById.get(pl.provider_id) : null;
+                        return (
+                          <div
+                            key={`${idx}-${r.plan_id}-${r.role}-${r.age_min}-${String(r.age_max)}-${String(
+                              r.is_particular,
+                            )}`}
+                            className="grid grid-cols-[1fr_190px_120px_120px] gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">
+                                {prov?.name ?? "Prestador"} · {pl?.name ?? r.plan_id}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {pl?.type ?? ""} · Ajuste {r.pct}%
+                              </div>
+                            </div>
+                            <div className="text-right text-xs text-muted-foreground tabular-nums">
+                              {r.role} · {r.age_min}–{r.age_max ?? "∞"}{" "}
+                              {r.is_particular ? "· Particular" : "· Obra social"}
+                            </div>
+                            <div className="text-right tabular-nums">{formatMoney(r.old_price)}</div>
+                            <div className="text-right font-medium tabular-nums">
+                              {formatMoney(r.new_price)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-lg">Buscador de precios</CardTitle>
+                    <CardDescription>Filtrá por prestador, plan, tipo o rol etario.</CardDescription>
+                  </div>
+                  <Badge variant="outline">{filteredPrices.length} resultados</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Ej: OSPADEP, plan joven, cónyuge..."
+                  className="h-10 rounded-lg"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Vigencia</Label>
+                  <Select value={pricesMonthFilter} onValueChange={setPricesMonthFilter}>
+                    <SelectTrigger className="h-9 w-[220px] rounded-lg">
+                      <SelectValue placeholder="Todas las vigencias" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas las vigencias</SelectItem>
+                      {availablePriceMonths.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {duplicatedRowsInSameMonth > 0 ? (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Se detectaron {duplicatedRowsInSameMonth} filas duplicadas en la misma vigencia.
+                    Revisá la base con un chequeo de duplicados antes de cotizar.
+                  </div>
+                ) : null}
+                {loading ? (
+                  <p className="text-sm text-muted-foreground">Cargando lista de precios…</p>
+                ) : filteredPrices.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sin resultados con ese filtro.</p>
+                ) : (
+                  <div className="overflow-hidden rounded-xl border border-border bg-white">
+                    <div className="grid grid-cols-[1fr_170px_140px] gap-2 border-b border-border bg-[#fafafa] px-3 py-2 text-xs font-medium text-muted-foreground">
+                      <div>Plan</div>
+                      <div className="text-right">Detalle</div>
+                      <div className="text-right">Precio</div>
+                    </div>
+                    <div className="max-h-[520px] overflow-y-auto">
+                      {filteredPrices.slice(0, 300).map((r, idx) => {
+                        const pl = planById.get(r.plan_id);
+                        const prov = pl ? providerById.get(pl.provider_id) : null;
+                        return (
+                          <div
+                            key={`${r.plan_id}-${idx}-${r.role}-${r.age_min}-${String(r.age_max)}-${String(
+                              r.is_particular,
+                            )}`}
+                            className="grid grid-cols-[1fr_170px_140px] gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0"
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">
+                                {prov?.name ?? "Prestador"} · {pl?.name ?? r.plan_id}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {pl?.type ?? ""} {r.is_particular ? "· Particular" : "· Obra social"}
+                              </div>
+                            </div>
+                            <div className="text-right text-xs text-muted-foreground tabular-nums">
+                              {String(r.role)} · {r.age_min}–{r.age_max ?? "∞"} ·{" "}
+                              {(r.effective_month ?? "").slice(0, 7) || "sin mes"}
+                            </div>
+                            <div className="text-right font-medium tabular-nums">{formatMoney(r.price)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Consejo: siempre corré una revisión antes de aplicar para evitar ajustes erróneos.
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+
+          <aside className="space-y-6 xl:col-span-4">
+            <Card className="rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Estado del proceso</CardTitle>
+                <CardDescription>Resumen rápido del batch actual.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="rounded-xl bg-[#fafafa] px-3 py-2">
+                  <p className="text-xs text-[#7a7a7a]">Batch en preparación</p>
+                  <p className="mt-0.5 font-medium text-[#171717]">{lastBatchId ?? "Sin batch activo"}</p>
+                </div>
+                <div className="rounded-xl bg-[#fafafa] px-3 py-2">
+                  <p className="text-xs text-[#7a7a7a]">Meses seleccionados</p>
+                  <p className="mt-0.5 font-medium tabular-nums text-[#171717]">
+                    {sourceMonth || "—"} → {targetMonth || "—"}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-[#fafafa] px-3 py-2">
+                  <p className="text-xs text-[#7a7a7a]">Estado</p>
+                  <Badge variant={lastBatchId ? "outline" : "secondary"} className="mt-1 rounded-full">
+                    {lastBatchId ? "Listo para aplicar" : "Pendiente de revisión"}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-lg">Historial reciente</CardTitle>
+                  <Badge variant="outline">{batches.length}</Badge>
+                </div>
+                <CardDescription>Últimos lotes creados y su estado.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {batches.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sin movimientos todavía.</p>
+                ) : (
+                  batches.map((b) => (
+                    <div
+                      key={b.id}
+                      className="rounded-xl border border-border bg-white px-3 py-2.5"
+                    >
+                      <p className="text-sm font-medium tabular-nums text-[#171717]">
+                        {b.source_month.slice(0, 7)} → {b.target_month.slice(0, 7)}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.notes ?? "-"}</p>
+                      <Badge
+                        variant={
+                          b.status === "applied"
+                            ? "default"
+                            : b.status === "failed"
+                              ? "destructive"
+                              : "secondary"
+                        }
+                        className="mt-2 rounded-full"
+                      >
+                        {b.status === "applied"
+                          ? "Aplicado"
+                          : b.status === "failed"
+                            ? "Falló"
+                            : "En preparación"}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </aside>
+        </div>
       </div>
     </main>
   );
