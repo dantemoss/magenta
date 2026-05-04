@@ -18,7 +18,15 @@ function getErrorMessage(e: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function LoginPage() {
+function LoginFallback() {
+  return (
+    <main className="flex flex-1 items-center justify-center bg-muted px-4 py-8">
+      <div className="h-[min(640px,85vh)] w-full max-w-6xl animate-pulse rounded-2xl bg-card/80 shadow-[0_0_0_1px_hsl(var(--primary)/0.08)]" />
+    </main>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") ?? "/";
@@ -52,8 +60,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-[#f5f6f8] px-4 py-8">
-      <section className="grid w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_20px_48px_-24px_rgba(0,0,0,0.35)] md:grid-cols-2">
+    <main className="flex flex-1 items-center justify-center bg-muted px-4 py-8">
+      <section className="grid w-full max-w-6xl overflow-hidden rounded-2xl bg-card shadow-[0_0_0_1px_hsl(var(--primary)/0.08),0_20px_48px_-24px_rgba(0,0,0,0.28)] md:grid-cols-2">
         <div className="flex min-h-[640px] flex-col px-8 py-8 sm:px-10">
           <div className="flex items-center gap-3">
             <Image
@@ -67,8 +75,10 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-14 max-w-sm">
-            <h1 className="text-4xl font-semibold tracking-tight text-[#171717]">Ingresar</h1>
-            <p className="mt-2 text-sm text-[#6a6a6a]">
+            <h1 className="font-heading text-4xl font-bold tracking-tight text-foreground">
+              Ingresar
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
               Acceso seguro al cotizador de planes OSPADEP.
             </p>
 
@@ -99,16 +109,16 @@ export default function LoginPage() {
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 text-sm text-[#505050]">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input
                     type="checkbox"
                     checked
                     readOnly
-                    className="size-4 rounded border-[#d5d5d5] accent-[#171717]"
+                    className="size-4 rounded border-border accent-primary"
                   />
                   Recordarme siempre
                 </label>
-                <span className="text-xs text-[#7d7d7d]">Sesión persistente</span>
+                <span className="text-xs text-muted-foreground">Sesión persistente</span>
               </div>
 
               {error ? (
@@ -139,3 +149,10 @@ export default function LoginPage() {
   );
 }
 
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={<LoginFallback />}>
+      <LoginPageContent />
+    </React.Suspense>
+  );
+}

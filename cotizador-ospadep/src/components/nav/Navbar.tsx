@@ -17,15 +17,15 @@ export function Navbar() {
 
   return (
     <header
-      className="sticky top-0 z-50 bg-white/80 backdrop-blur-md"
-      style={{ boxShadow: "rgba(0,0,0,0.08) 0px 0px 0px 1px" }}
+      className="sticky top-0 z-50 border-b border-border/80 bg-card/85 backdrop-blur-md"
+      style={{ boxShadow: "0 1px 0 0 hsl(var(--primary) / 0.06)" }}
     >
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4">
 
         {/* Brand */}
         <Link
           href="/"
-          className="flex items-center gap-2.5 text-sm font-semibold text-[#171717] transition-opacity hover:opacity-70"
+          className="flex items-center gap-2.5 text-sm font-semibold text-foreground transition-opacity hover:opacity-75"
           style={{ letterSpacing: "-0.32px" }}
         >
           <Image
@@ -36,13 +36,13 @@ export function Navbar() {
             className="h-9 w-auto object-contain"
             priority
           />
-          
+
         </Link>
 
         {/* Nav pills */}
         <nav
-          className="flex items-center gap-0.5 rounded-full bg-[#fafafa] p-1"
-          style={{ boxShadow: "rgba(0,0,0,0.08) 0px 0px 0px 1px" }}
+          className="flex items-center gap-0.5 rounded-full bg-muted p-1"
+          style={{ boxShadow: "0px 0px 0px 1px hsl(var(--border))" }}
         >
           {navItems.map((it) => {
             const active = pathname === it.href;
@@ -53,8 +53,8 @@ export function Navbar() {
                 className={cn(
                   "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-150",
                   active
-                    ? "bg-[#171717] text-white"
-                    : "text-[#666666] hover:bg-[#ebebeb] hover:text-[#171717]",
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                 )}
               >
                 {it.label}

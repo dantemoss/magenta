@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { Poppins, Raleway } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/nav/Navbar";
 import { CustomCursor } from "@/components/ui/custom-cursor";
 import { DotPattern } from "@/components/ui/dot-pattern";
 
-const jetBrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
+const poppins = Poppins({
+  variable: "--font-poppins",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const raleway = Raleway({
+  variable: "--font-raleway",
+  subsets: ["latin"],
+  weight: ["700", "900"],
 });
 
 export const metadata: Metadata = {
@@ -47,7 +53,7 @@ export const metadata: Metadata = {
     shortcut: ["/favicon/favicon.ico"],
   },
   other: {
-    "msapplication-TileColor": "#ffffff",
+    "msapplication-TileColor": "#004f9f",
     "msapplication-config": "/favicon/browserconfig.xml",
   },
 };
@@ -58,24 +64,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${jetBrainsMono.variable} h-full antialiased`}>
-      <body className="relative flex min-h-full flex-col bg-[#f5f5f5] text-foreground">
-        {/* DotPattern global — visible en toda la app */}
+    <html
+      lang="es"
+      className={`${poppins.variable} ${raleway.variable} h-full antialiased`}
+    >
+      <body className="relative flex min-h-full flex-col bg-muted text-foreground">
         <DotPattern
           width={20}
           height={20}
           cx={1}
           cy={1}
           cr={1}
-          className="fixed fill-neutral-300/50"
+          className="fixed fill-primary/[0.07]"
         />
-        {/* Fade mask radial para suavizar el patrón */}
         <div
-          className="pointer-events-none fixed inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 90% 70% at 50% 0%, transparent 30%, #f5f5f5 100%)",
-          }}
+          className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_90%_70%_at_50%_0%,transparent_30%,hsl(var(--muted))_100%)]"
         />
         <CustomCursor />
         <div className="relative z-10 flex flex-1 flex-col">

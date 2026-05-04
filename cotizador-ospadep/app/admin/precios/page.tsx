@@ -456,19 +456,19 @@ export default function AdminPricesPage() {
   }
 
   return (
-    <main className="relative flex-1 overflow-hidden bg-[#f6f7f9] px-4 py-8">
-      <HexagonPattern className="pointer-events-none absolute inset-0 text-neutral-300/35 [mask-image:radial-gradient(85%_60%_at_50%_15%,white,transparent)]" />
+    <main className="relative flex-1 overflow-hidden bg-muted px-4 py-8">
+      <HexagonPattern className="pointer-events-none absolute inset-0 text-primary/[0.12] [mask-image:radial-gradient(85%_60%_at_50%_15%,white,transparent)]" />
       <div className="mx-auto w-full max-w-7xl space-y-6">
-        <section className="relative overflow-hidden rounded-2xl bg-white px-6 py-6 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_12px_24px_-16px_rgba(0,0,0,0.18)]">
+        <section className="relative overflow-hidden rounded-2xl bg-card px-6 py-6 shadow-[0_0_0_1px_hsl(var(--primary)/0.07),0_12px_24px_-16px_rgba(0,0,0,0.14)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[#7a7a7a]">
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
                 Panel interno
               </p>
-              <h1 className="text-2xl font-semibold tracking-tight text-[#171717]">
+              <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
                 Administración de precios
               </h1>
-              <p className="text-sm text-[#5c5c5c]">
+              <p className="text-sm text-muted-foreground">
                 Prepará un lote, revisá el impacto y aplicá solo cuando esté validado.
               </p>
             </div>
@@ -477,17 +477,17 @@ export default function AdminPricesPage() {
             </Badge>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-              <p className="text-xs text-[#7a7a7a]">Prestadores cargados</p>
-              <p className="mt-1 text-xl font-semibold tabular-nums text-[#171717]">{providers.length}</p>
+            <div className="rounded-xl bg-muted px-4 py-3">
+              <p className="text-xs text-muted-foreground">Prestadores cargados</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{providers.length}</p>
             </div>
-            <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-              <p className="text-xs text-[#7a7a7a]">Planes disponibles</p>
-              <p className="mt-1 text-xl font-semibold tabular-nums text-[#171717]">{plans.length}</p>
+            <div className="rounded-xl bg-muted px-4 py-3">
+              <p className="text-xs text-muted-foreground">Planes disponibles</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{plans.length}</p>
             </div>
-            <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-              <p className="text-xs text-[#7a7a7a]">Registros de precios</p>
-              <p className="mt-1 text-xl font-semibold tabular-nums text-[#171717]">{prices.length}</p>
+            <div className="rounded-xl bg-muted px-4 py-3">
+              <p className="text-xs text-muted-foreground">Registros de precios</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{prices.length}</p>
             </div>
           </div>
         </section>
@@ -508,10 +508,10 @@ export default function AdminPricesPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-2 rounded-xl bg-[#fafafa] p-3 text-xs text-[#5f5f5f] sm:grid-cols-3">
-                  <p><span className="font-semibold text-[#171717]">1.</span> Definí mes base y destino</p>
-                  <p><span className="font-semibold text-[#171717]">2.</span> Elegí alcance y porcentaje</p>
-                  <p><span className="font-semibold text-[#171717]">3.</span> Revisá y luego aplicá</p>
+                <div className="grid gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground sm:grid-cols-3">
+                  <p><span className="font-semibold text-foreground">1.</span> Definí mes base y destino</p>
+                  <p><span className="font-semibold text-foreground">2.</span> Elegí alcance y porcentaje</p>
+                  <p><span className="font-semibold text-foreground">3.</span> Revisá y luego aplicá</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-2">
@@ -645,7 +645,7 @@ export default function AdminPricesPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-hidden rounded-xl border border-border bg-white">
-                    <div className="grid grid-cols-[1fr_190px_120px_120px] gap-2 border-b border-border bg-[#fafafa] px-3 py-2 text-xs font-medium text-muted-foreground">
+                    <div className="grid grid-cols-[1fr_190px_120px_120px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
                       <div>Plan</div>
                       <div className="text-right">Detalle</div>
                       <div className="text-right">Antes</div>
@@ -732,7 +732,7 @@ export default function AdminPricesPage() {
                   <p className="text-sm text-muted-foreground">Sin resultados con ese filtro.</p>
                 ) : (
                   <div className="overflow-hidden rounded-xl border border-border bg-white">
-                    <div className="grid grid-cols-[1fr_220px_140px] gap-2 border-b border-border bg-[#fafafa] px-3 py-2 text-xs font-medium text-muted-foreground">
+                    <div className="grid grid-cols-[1fr_220px_140px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
                       <div>Plan</div>
                       <div>Detalle</div>
                       <div className="text-right">Precio</div>
@@ -757,7 +757,7 @@ export default function AdminPricesPage() {
                               </div>
                             </div>
                             <div className="space-y-0.5 text-xs text-muted-foreground">
-                              <p className="font-medium text-[#373737]">{formatRoleText(String(r.role))}</p>
+                              <p className="font-medium text-foreground">{formatRoleText(String(r.role))}</p>
                               <p>Edad {r.age_min} a {r.age_max ?? "∞"}</p>
                               <p>{formatMonthText((r.effective_month ?? "").slice(0, 7))}</p>
                             </div>
@@ -782,18 +782,18 @@ export default function AdminPricesPage() {
                 <CardDescription>Resumen rápido del batch actual.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-xl bg-[#fafafa] px-3 py-2">
-                  <p className="text-xs text-[#7a7a7a]">Batch en preparación</p>
-                  <p className="mt-0.5 font-medium text-[#171717]">{lastBatchId ?? "Sin batch activo"}</p>
+                <div className="rounded-xl bg-muted px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Batch en preparación</p>
+                  <p className="mt-0.5 font-medium text-foreground">{lastBatchId ?? "Sin batch activo"}</p>
                 </div>
-                <div className="rounded-xl bg-[#fafafa] px-3 py-2">
-                  <p className="text-xs text-[#7a7a7a]">Meses seleccionados</p>
-                  <p className="mt-0.5 font-medium tabular-nums text-[#171717]">
+                <div className="rounded-xl bg-muted px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Meses seleccionados</p>
+                  <p className="mt-0.5 font-medium tabular-nums text-foreground">
                     {sourceMonth || "—"} → {targetMonth || "—"}
                   </p>
                 </div>
-                <div className="rounded-xl bg-[#fafafa] px-3 py-2">
-                  <p className="text-xs text-[#7a7a7a]">Estado</p>
+                <div className="rounded-xl bg-muted px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Estado</p>
                   <Badge variant={lastBatchId ? "outline" : "secondary"} className="mt-1 rounded-full">
                     {lastBatchId ? "Listo para aplicar" : "Pendiente de revisión"}
                   </Badge>
@@ -884,7 +884,7 @@ export default function AdminPricesPage() {
                       key={b.id}
                       className="rounded-xl border border-border bg-white px-3 py-2.5"
                     >
-                      <p className="text-sm font-medium tabular-nums text-[#171717]">
+                      <p className="text-sm font-medium tabular-nums text-foreground">
                         {b.source_month.slice(0, 7)} → {b.target_month.slice(0, 7)}
                       </p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.notes ?? "-"}</p>

@@ -53,7 +53,7 @@ const formSchema = z
         return v;
       },
       z
-        .number({ required_error: "Ingresá la edad del titular", invalid_type_error: "Edad inválida" })
+        .number({ message: "Ingresá la edad del titular o una edad válida" })
         .int()
         .min(18, "El titular debe ser mayor de 18 años")
         .max(120),
@@ -70,7 +70,7 @@ const formSchema = z
         return v;
       },
       z
-        .number({ invalid_type_error: "Edad inválida" })
+        .number({ message: "Edad inválida" })
         .int()
         .min(18, "El cónyuge debe ser mayor de 18 años")
         .max(120)
@@ -90,8 +90,7 @@ const formSchema = z
           },
           z
             .number({
-              required_error: "Ingresá la edad del menor",
-              invalid_type_error: "Edad inválida",
+              message: "Ingresá la edad del menor o una edad válida",
             })
             .int()
             .min(0)
@@ -111,7 +110,7 @@ const formSchema = z
         }
         return v;
       },
-      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+      z.number({ message: "Importe inválido" }).min(0).optional(),
     ),
     holderGross: z.preprocess(
       (v) => {
@@ -123,7 +122,7 @@ const formSchema = z
         }
         return v;
       },
-      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+      z.number({ message: "Importe inválido" }).min(0).optional(),
     ),
     spouseUsesGross: z.boolean(),
     spouseContribution: z.preprocess(
@@ -136,7 +135,7 @@ const formSchema = z
         }
         return v;
       },
-      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+      z.number({ message: "Importe inválido" }).min(0).optional(),
     ),
     spouseGross: z.preprocess(
       (v) => {
@@ -148,7 +147,7 @@ const formSchema = z
         }
         return v;
       },
-      z.number({ invalid_type_error: "Importe inválido" }).min(0).optional(),
+      z.number({ message: "Importe inválido" }).min(0).optional(),
     ),
     commercialDiscounts: z.array(
       z.object({ label: z.string(), amount: z.coerce.number().min(0) }),
@@ -188,7 +187,7 @@ const formSchema = z
           path: ["spouseGross"],
           message: "Ingresá el sueldo bruto del cónyuge",
         });
-      } else if (val.spouseUsesGross && val.spouseGross < 0) {
+      } else if (val.spouseUsesGross && typeof val.spouseGross === "number" && val.spouseGross < 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["spouseGross"], message: "Sueldo bruto inválido" });
       }
       if (!val.spouseUsesGross && typeof val.spouseContribution !== "number") {
@@ -197,7 +196,7 @@ const formSchema = z
           path: ["spouseContribution"],
           message: "Ingresá el aporte directo del cónyuge",
         });
-      } else if (!val.spouseUsesGross && val.spouseContribution < 0) {
+      } else if (!val.spouseUsesGross && typeof val.spouseContribution === "number" && val.spouseContribution < 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["spouseContribution"], message: "Aportes inválidos" });
       }
     }
@@ -328,9 +327,9 @@ const STEPS = [
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
-const shadowBorder = "0px 0px 0px 1px rgba(0,0,0,0.08)";
+const shadowBorder = "0px 0px 0px 1px rgba(0, 79, 159, 0.09)";
 const shadowCard = "rgba(0,0,0,0.08) 0px 0px 0px 1px, rgba(0,0,0,0.04) 0px 2px 2px";
-const shadowInput = "0px 0px 0px 1px rgba(0,0,0,0.10)";
+const shadowInput = "0px 0px 0px 1px rgba(0, 79, 159, 0.11)";
 
 // ─── Animation variants ───────────────────────────────────────────────────────
 
@@ -629,6 +628,7 @@ export function QuoteForm() {
         rows: planCompareRows.map((r) => ({
           plan: { name: r.plan.name, type: r.plan.type },
           providerName: r.providerName,
+          providerSlug: r.providerSlug,
           result: r.result,
           error: r.error,
         })),
@@ -712,19 +712,19 @@ export function QuoteForm() {
       className="mx-auto w-full max-w-5xl overflow-hidden rounded-2xl bg-white"
       style={{
         boxShadow:
-          "rgba(0,0,0,0.08) 0px 0px 0px 1px, rgba(0,0,0,0.04) 0px 2px 4px, rgba(0,0,0,0.04) 0px 12px 24px -8px",
+          "rgba(0, 79, 159, 0.07) 0px 0px 0px 1px, rgba(0, 0, 0, 0.03) 0px 2px 4px, rgba(0, 0, 0, 0.03) 0px 12px 24px -8px",
       }}
     >
       <div className="flex min-h-[640px] flex-col md:flex-row">
 
         {/* ════════════════════ LEFT SIDEBAR ════════════════════ */}
-        <aside className="hidden w-64 shrink-0 flex-col bg-[#fafafa] p-8 md:flex">
+        <aside className="hidden w-64 shrink-0 flex-col bg-muted p-8 md:flex">
           {/* Brand */}
           <div className="mb-10">
-            <p className="text-xl font-semibold tracking-tight text-[#171717]" style={{ letterSpacing: "-0.96px" }}>
+            <p className="font-heading text-xl font-black tracking-tight text-foreground" style={{ letterSpacing: "-0.96px" }}>
               OSPADEP
             </p>
-            <p className="mt-0.5 text-xs text-[#808080]">Cotizador de planes</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Cotizador de planes</p>
           </div>
 
           {/* Steps */}
@@ -740,8 +740,8 @@ export function QuoteForm() {
                       className={cn(
                         "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all duration-200",
                         isActive || isCompleted
-                          ? "bg-[#171717] text-white"
-                          : "bg-white text-[#808080]",
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-white text-muted-foreground",
                       )}
                       style={
                         !(isActive || isCompleted)
@@ -755,7 +755,7 @@ export function QuoteForm() {
                       <div
                         className={cn(
                           "w-px flex-1 transition-colors duration-300",
-                          currentStep > i ? "bg-[#171717]" : "bg-[#ebebeb]",
+                          currentStep > i ? "bg-primary" : "bg-border",
                         )}
                         style={{ minHeight: 48 }}
                       />
@@ -767,12 +767,12 @@ export function QuoteForm() {
                     <p
                       className={cn(
                         "text-sm font-medium leading-snug transition-colors duration-200",
-                        isActive ? "text-[#171717]" : "text-[#808080]",
+                        isActive ? "text-foreground" : "text-muted-foreground",
                       )}
                     >
                       {step.title}
                     </p>
-                    <p className="mt-1 text-xs leading-relaxed text-[#808080]">
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {step.description}
                     </p>
                   </div>
@@ -783,26 +783,25 @@ export function QuoteForm() {
         </aside>
 
         {/* Vertical divider */}
-        <div className="hidden w-px shrink-0 bg-[#ebebeb] md:block" />
+        <div className="hidden w-px shrink-0 bg-border md:block" />
 
         {/* ════════════════════ RIGHT CONTENT ════════════════════ */}
         <div className="flex flex-1 flex-col">
 
           {/* Mobile progress bar */}
           <div
-            className="flex items-center gap-2 px-6 py-4 md:hidden"
-            style={{ borderBottom: "1px solid #ebebeb" }}
+            className="flex items-center gap-2 border-b border-border px-6 py-4 md:hidden"
           >
             {STEPS.map((_, i) => (
               <div
                 key={i}
                 className={cn(
                   "h-1 flex-1 rounded-full transition-all duration-300",
-                  i <= currentStep ? "bg-[#171717]" : "bg-[#ebebeb]",
+                  i <= currentStep ? "bg-primary" : "bg-border",
                 )}
               />
             ))}
-            <span className="ml-2 shrink-0 text-xs text-[#808080]">
+            <span className="ml-2 shrink-0 text-xs text-muted-foreground">
               {currentStep + 1}/{STEPS.length}
             </span>
           </div>
@@ -824,16 +823,16 @@ export function QuoteForm() {
 
             {/* Step header */}
             <div className="mb-8">
-              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-widest text-[#808080]">
+              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                 Paso {currentStep + 1} de {STEPS.length}
               </p>
               <h2
-                className="text-2xl font-semibold text-[#171717]"
+                className="font-heading text-2xl font-bold text-foreground"
                 style={{ letterSpacing: "-0.96px" }}
               >
                 {STEPS[currentStep].title}
               </h2>
-              <p className="mt-1 text-sm text-[#4d4d4d]">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {STEPS[currentStep].description}
               </p>
             </div>
@@ -843,7 +842,7 @@ export function QuoteForm() {
               <div className="flex-1 space-y-4">
                 {loading && (
                   <motion.p
-                    className="text-sm text-[#808080]"
+                    className="text-sm text-muted-foreground"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: [0.4, 1, 0.4] }}
                     transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
@@ -858,10 +857,10 @@ export function QuoteForm() {
                   style={{ boxShadow: shadowBorder }}
                 >
                   <div className="space-y-0.5">
-                    <Label htmlFor="compareAll" className="text-sm font-medium text-[#171717]">
+                    <Label htmlFor="compareAll" className="text-sm font-medium text-foreground">
                       Todos los prestadores
                     </Label>
-                    <p className="text-xs text-[#808080]">
+                    <p className="text-xs text-muted-foreground">
                       Cotiza todos los planes cargados en una tabla ordenada por precio.
                     </p>
                   </div>
@@ -883,14 +882,14 @@ export function QuoteForm() {
 
                 {compareAllProviders ? (
                   <div
-                    className="rounded-lg bg-[#fafafa] px-4 py-3.5"
+                    className="rounded-lg bg-muted px-4 py-3.5"
                     style={{ boxShadow: shadowBorder }}
                   >
-                    <p className="text-sm text-[#4d4d4d]">
+                    <p className="text-sm text-muted-foreground">
                       Se incluirán{" "}
-                      <span className="font-semibold text-[#171717]">{plans.length}</span>{" "}
+                      <span className="font-semibold text-foreground">{plans.length}</span>{" "}
                       planes de{" "}
-                      <span className="font-semibold text-[#171717]">{providers.length}</span>{" "}
+                      <span className="font-semibold text-foreground">{providers.length}</span>{" "}
                       prestadores en la cotización.
                     </p>
                   </div>
@@ -898,7 +897,7 @@ export function QuoteForm() {
                   <>
                     {/* Provider select */}
                     <div className="space-y-1.5">
-                      <Label className="text-[11px] font-medium uppercase tracking-widest text-[#808080]">
+                      <Label className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                         Prestador
                       </Label>
                       <Select
@@ -931,7 +930,7 @@ export function QuoteForm() {
                     {/* Plans */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label className="text-[11px] font-medium uppercase tracking-widest text-[#808080]">
+                        <Label className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                           Planes a cotizar
                         </Label>
                         <div className="flex gap-1">
@@ -939,7 +938,7 @@ export function QuoteForm() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-[#4d4d4d]"
+                            className="h-7 px-2 text-xs text-muted-foreground"
                             disabled={providerPlans.length === 0 || loading}
                             onClick={() => { setSelectedPlanIds(providerPlans.map((p) => p.id)); setPlanCompareRows([]); }}
                           >
@@ -949,7 +948,7 @@ export function QuoteForm() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-[#4d4d4d]"
+                            className="h-7 px-2 text-xs text-muted-foreground"
                             disabled={providerPlans.length === 0 || loading}
                             onClick={() => { setSelectedPlanIds([]); setPlanCompareRows([]); }}
                           >
@@ -959,7 +958,7 @@ export function QuoteForm() {
                       </div>
                       {loadingPrices && (
                         <motion.p
-                          className="text-xs text-[#808080]"
+                          className="text-xs text-muted-foreground"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: [0.4, 1, 0.4] }}
                           transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
@@ -972,7 +971,7 @@ export function QuoteForm() {
                         style={{ boxShadow: shadowBorder }}
                       >
                         {providerPlans.length === 0 ? (
-                          <p className="px-2 py-2 text-xs text-[#808080]">Sin planes para este prestador.</p>
+                          <p className="px-2 py-2 text-xs text-muted-foreground">Sin planes para este prestador.</p>
                         ) : (
                           providerPlans.map((pl) => {
                             const checked = selectedPlanIds.includes(pl.id);
@@ -980,11 +979,11 @@ export function QuoteForm() {
                             return (
                               <label
                                 key={pl.id}
-                                className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-[#fafafa]"
+                                className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
                               >
                                 <input
                                   type="checkbox"
-                                  className="mt-0.5 size-3.5 accent-[#171717]"
+                                  className="mt-0.5 size-3.5 accent-primary"
                                   checked={checked}
                                   onChange={(e) => {
                                     setSelectedPlanIds((prev) => togglePlanId(prev, pl.id, e.target.checked));
@@ -992,8 +991,8 @@ export function QuoteForm() {
                                   }}
                                 />
                                 <span className="min-w-0 leading-tight">
-                                  <span className="font-medium text-[#171717]">{pl.name}</span>
-                                  <span className="text-[#808080]"> · {pl.type}</span>
+                                  <span className="font-medium text-foreground">{pl.name}</span>
+                                  <span className="text-muted-foreground"> · {pl.type}</span>
                                   {!hasPrices && !loadingPrices && (
                                     <span className="mt-0.5 block text-[11px] text-amber-700">
                                       Sin tarifa este mes
@@ -1015,10 +1014,10 @@ export function QuoteForm() {
                   style={{ boxShadow: shadowBorder }}
                 >
                   <div className="space-y-0.5">
-                    <Label htmlFor="isParticular" className="text-sm font-medium text-[#171717]">
+                    <Label htmlFor="isParticular" className="text-sm font-medium text-foreground">
                       Modalidad particular
                     </Label>
-                    <p className="text-xs text-[#808080]">
+                    <p className="text-xs text-muted-foreground">
                       Tarifario particular (sin relación de dependencia).
                     </p>
                   </div>
@@ -1034,9 +1033,9 @@ export function QuoteForm() {
 
                 {/* Vigencia */}
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs text-[#808080]">Vigencia:</span>
+                  <span className="text-xs text-muted-foreground">Vigencia:</span>
                   <span
-                    className="rounded-full px-3 py-0.5 text-xs font-medium text-[#171717]"
+                    className="rounded-full px-3 py-0.5 text-xs font-medium text-foreground"
                     style={{ boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.10)" }}
                   >
                     {effectiveMonth.slice(0, 7)}
@@ -1052,7 +1051,7 @@ export function QuoteForm() {
                 <div className="space-y-1.5">
                   <Label
                     htmlFor="holderAge"
-                    className="text-[11px] font-medium uppercase tracking-widest text-[#808080]"
+                    className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground"
                   >
                     Titular — Edad
                   </Label>
@@ -1062,7 +1061,7 @@ export function QuoteForm() {
                     inputMode="numeric"
                     autoComplete="off"
                     placeholder="Ej. 35"
-                    className="h-11 rounded-xl border-0 bg-white text-sm placeholder:text-[#b0b0b0]"
+                    className="h-11 rounded-xl border-0 bg-white text-sm placeholder:text-muted-foreground/55"
                     style={{ boxShadow: shadowInput }}
                     value={typeof holderAge === "number" && Number.isFinite(holderAge) ? String(holderAge) : ""}
                     onChange={(e) => {
@@ -1072,20 +1071,20 @@ export function QuoteForm() {
                     }}
                   />
                   {form.formState.errors.holderAge && (
-                    <p className="text-xs text-red-600">{form.formState.errors.holderAge.message}</p>
+                    <p className="text-xs text-destructive">{form.formState.errors.holderAge.message}</p>
                   )}
                 </div>
 
                 {/* Spouse toggle */}
                 <div
-                  className="flex items-center justify-between rounded-lg bg-[#fafafa] px-4 py-3.5"
+                  className="flex items-center justify-between rounded-lg bg-muted px-4 py-3.5"
                   style={{ boxShadow: shadowBorder }}
                 >
                   <div className="space-y-0.5">
-                    <Label htmlFor="hasSpouse" className="text-sm font-medium text-[#171717]">
+                    <Label htmlFor="hasSpouse" className="text-sm font-medium text-foreground">
                       Incluye cónyuge
                     </Label>
-                    <p className="text-xs text-[#808080]">
+                    <p className="text-xs text-muted-foreground">
                       Activá si el grupo incluye cónyuge o conviviente a cargo.
                     </p>
                   </div>
@@ -1105,7 +1104,7 @@ export function QuoteForm() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="spouseAge"
-                      className="text-[11px] font-medium uppercase tracking-widest text-[#808080]"
+                      className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground"
                     >
                       Cónyuge — Edad
                     </Label>
@@ -1115,7 +1114,7 @@ export function QuoteForm() {
                       inputMode="numeric"
                       autoComplete="off"
                       placeholder="Ej. 33"
-                      className="h-11 rounded-xl border-0 bg-white text-sm placeholder:text-[#b0b0b0]"
+                      className="h-11 rounded-xl border-0 bg-white text-sm placeholder:text-muted-foreground/55"
                       style={{ boxShadow: shadowInput }}
                       value={typeof spouseAge === "number" && Number.isFinite(spouseAge) ? String(spouseAge) : ""}
                       onChange={(e) => {
@@ -1125,7 +1124,7 @@ export function QuoteForm() {
                       }}
                     />
                     {form.formState.errors.spouseAge && (
-                      <p className="text-xs text-red-600">{form.formState.errors.spouseAge.message}</p>
+                      <p className="text-xs text-destructive">{form.formState.errors.spouseAge.message}</p>
                     )}
                   </div>
                 )}
@@ -1137,8 +1136,8 @@ export function QuoteForm() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-[#171717]">Hijos / menores</p>
-                      <p className="mt-0.5 text-xs text-[#808080]">
+                      <p className="text-sm font-medium text-foreground">Hijos / menores</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         Sumá un renglón por cada hijo o menor a incluir.
                       </p>
                     </div>
@@ -1155,7 +1154,7 @@ export function QuoteForm() {
                   </div>
 
                   {childrenArray.fields.length === 0 ? (
-                    <p className="mt-3 text-xs text-[#808080]">Sin menores en el grupo.</p>
+                    <p className="mt-3 text-xs text-muted-foreground">Sin menores en el grupo.</p>
                   ) : (
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       {childrenArray.fields.map((field, idx) => {
@@ -1165,7 +1164,7 @@ export function QuoteForm() {
                             <div className="flex-1 space-y-1">
                               <Label
                                 htmlFor={`childAge-${field.id}`}
-                                className="text-xs text-[#808080]"
+                                className="text-xs text-muted-foreground"
                               >
                                 Hijo/a #{idx + 1} · Edad
                               </Label>
@@ -1175,7 +1174,7 @@ export function QuoteForm() {
                                 inputMode="numeric"
                                 autoComplete="off"
                                 placeholder="Edad"
-                                className="h-10 rounded-xl border-0 bg-white text-sm placeholder:text-[#b0b0b0]"
+                                className="h-10 rounded-xl border-0 bg-white text-sm placeholder:text-muted-foreground/55"
                                 style={{ boxShadow: shadowInput }}
                                 defaultValue={field.age == null ? "" : String(field.age)}
                                 {...form.register(path, {
@@ -1199,7 +1198,7 @@ export function QuoteForm() {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-9 text-xs text-[#808080]"
+                              className="h-9 text-xs text-muted-foreground"
                               onClick={() => { childrenArray.remove(idx); setPlanCompareRows([]); }}
                             >
                               Quitar
@@ -1220,9 +1219,9 @@ export function QuoteForm() {
                   {/* Titular */}
                   <div className="rounded-lg p-4" style={{ boxShadow: shadowBorder }}>
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-[#171717]">Titular</p>
+                      <p className="text-sm font-medium text-foreground">Titular</p>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-[#808080]">Bruto</span>
+                        <span className="text-xs text-muted-foreground">Bruto</span>
                         <Switch
                           checked={Boolean(holderUsesGross)}
                           onCheckedChange={(checked) => {
@@ -1235,7 +1234,7 @@ export function QuoteForm() {
                     <div className="mt-3 space-y-1">
                       <Label
                         htmlFor={holderUsesGross ? "holderGross" : "holderContribution"}
-                        className="text-xs text-[#808080]"
+                        className="text-xs text-muted-foreground"
                       >
                         {holderUsesGross ? "Sueldo bruto" : "Aportes directos"}
                       </Label>
@@ -1245,9 +1244,11 @@ export function QuoteForm() {
                         inputMode="numeric"
                         autoComplete="off"
                         placeholder="$"
-                        className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-[#b0b0b0]"
+                        className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-muted-foreground/55"
                         style={{ boxShadow: shadowInput }}
-                        value={formatGroupedCurrency(holderAmountValue)}
+                        value={formatGroupedCurrency(
+                          typeof holderAmountValue === "number" ? holderAmountValue : undefined,
+                        )}
                         onChange={(e) => {
                           const parsed = parseDigitsToNumber(e.target.value);
                           form.setValue(holderAmountField, parsed, {
@@ -1266,9 +1267,9 @@ export function QuoteForm() {
                     style={{ boxShadow: shadowBorder }}
                   >
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-[#171717]">Cónyuge</p>
+                      <p className="text-sm font-medium text-foreground">Cónyuge</p>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-[#808080]">Bruto</span>
+                        <span className="text-xs text-muted-foreground">Bruto</span>
                         <Switch
                           checked={Boolean(spouseUsesGross)}
                           onCheckedChange={(checked) => {
@@ -1282,7 +1283,7 @@ export function QuoteForm() {
                     <div className="mt-3 space-y-1">
                       <Label
                         htmlFor={spouseUsesGross ? "spouseGross" : "spouseContribution"}
-                        className="text-xs text-[#808080]"
+                        className="text-xs text-muted-foreground"
                       >
                         {spouseUsesGross ? "Sueldo bruto" : "Aportes directos"}
                       </Label>
@@ -1292,9 +1293,11 @@ export function QuoteForm() {
                         inputMode="numeric"
                         autoComplete="off"
                         placeholder="$"
-                        className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-[#b0b0b0]"
+                        className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-muted-foreground/55"
                         style={{ boxShadow: shadowInput }}
-                        value={formatGroupedCurrency(spouseAmountValue)}
+                        value={formatGroupedCurrency(
+                          typeof spouseAmountValue === "number" ? spouseAmountValue : undefined,
+                        )}
                         disabled={!hasSpouse}
                         onChange={(e) => {
                           const parsed = parseDigitsToNumber(e.target.value);
@@ -1311,18 +1314,18 @@ export function QuoteForm() {
 
                 {/* Total aportes */}
                 <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium uppercase tracking-widest text-[#808080]">
+                  <Label className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                     Total aportes (calculado)
                   </Label>
                   <Input
                     type="text"
                     inputMode="numeric"
-                    className="h-11 rounded-xl border-0 bg-[#fafafa] text-sm font-medium tabular-nums"
+                    className="h-11 rounded-xl border-0 bg-muted text-sm font-medium tabular-nums"
                     style={{ boxShadow: shadowBorder }}
                     value={formatMoney(totalAportes)}
                     readOnly
                   />
-                  <p className="text-xs text-[#808080]">
+                  <p className="text-xs text-muted-foreground">
                     Suma titular + cónyuge si corresponde. Misma base para todos los planes comparados.
                   </p>
                 </div>
@@ -1331,8 +1334,8 @@ export function QuoteForm() {
                 <div className="rounded-lg p-5" style={{ boxShadow: shadowBorder }}>
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-[#171717]">Descuentos comerciales</p>
-                      <p className="mt-0.5 text-xs text-[#808080]">
+                      <p className="text-sm font-medium text-foreground">Descuentos comerciales</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         Se aplican al subtotal antes de descontar los aportes.
                       </p>
                     </div>
@@ -1349,13 +1352,13 @@ export function QuoteForm() {
                   </div>
 
                   {commercialDiscountsArray.fields.length === 0 ? (
-                    <p className="text-xs text-[#808080]">Sin descuentos adicionales.</p>
+                    <p className="text-xs text-muted-foreground">Sin descuentos adicionales.</p>
                   ) : (
                     <div className="space-y-2">
                       {commercialDiscountsArray.fields.map((field, idx) => (
                         <div key={field.id} className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
                           <div className="min-w-[140px] flex-1 space-y-1">
-                            <Label className="text-xs text-[#808080]">Concepto</Label>
+                            <Label className="text-xs text-muted-foreground">Concepto</Label>
                             <Input
                               className="h-9 border-0 bg-white"
                               style={{ boxShadow: shadowInput }}
@@ -1368,7 +1371,7 @@ export function QuoteForm() {
                             />
                           </div>
                           <div className="w-full space-y-1 sm:w-32">
-                            <Label className="text-xs text-[#808080]">Importe</Label>
+                            <Label className="text-xs text-muted-foreground">Importe</Label>
                             <Input
                               className="h-9 border-0 bg-white"
                               style={{ boxShadow: shadowInput }}
@@ -1393,7 +1396,7 @@ export function QuoteForm() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-9 shrink-0 text-xs text-[#808080]"
+                            className="h-9 shrink-0 text-xs text-muted-foreground"
                             onClick={() => { commercialDiscountsArray.remove(idx); setPlanCompareRows([]); }}
                           >
                             Quitar
@@ -1418,29 +1421,29 @@ export function QuoteForm() {
                     transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
                   >
                     <div className="rounded-lg p-4" style={{ boxShadow: shadowCard }}>
-                      <p className="text-xs text-[#808080]">Mejor cuota estimada</p>
+                      <p className="text-xs text-muted-foreground">Mejor cuota estimada</p>
                       <p
-                        className="mt-1.5 text-2xl font-semibold tabular-nums text-[#171717]"
+                        className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground"
                         style={{ letterSpacing: "-0.96px" }}
                       >
                         {bestTotal != null ? formatMoneyCompact(bestTotal) : "—"}
                       </p>
                     </div>
                     <div className="rounded-lg p-4" style={{ boxShadow: shadowCard }}>
-                      <p className="text-xs text-[#808080]">Planes cotizados</p>
+                      <p className="text-xs text-muted-foreground">Planes cotizados</p>
                       <p
-                        className="mt-1.5 text-2xl font-semibold tabular-nums text-[#171717]"
+                        className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground"
                         style={{ letterSpacing: "-0.96px" }}
                       >
                         {successfulQuotes.length}
                       </p>
                     </div>
                     <div className="rounded-lg p-4" style={{ boxShadow: shadowCard }}>
-                      <p className="text-xs text-[#808080]">Alcance</p>
-                      <p className="mt-1.5 text-sm font-semibold text-[#171717]">
+                      <p className="text-xs text-muted-foreground">Alcance</p>
+                      <p className="mt-1.5 text-sm font-semibold text-foreground">
                         {compareAllProviders ? "Todos los prestadores" : (selectedProvider?.name ?? "—")}
                       </p>
-                      <p className="mt-0.5 text-xs text-[#808080]">
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {isParticular ? "Particular" : "Obra social"}
                       </p>
                     </div>
@@ -1461,13 +1464,13 @@ export function QuoteForm() {
                 {planCompareRows.length === 0 && !error && (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <div
-                      className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#fafafa]"
+                      className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted"
                       style={{ boxShadow: shadowBorder }}
                     >
                       <span className="text-xl">—</span>
                     </div>
-                    <p className="text-sm font-medium text-[#171717]">Sin resultados</p>
-                    <p className="mt-1 text-xs text-[#808080]">Volvé al paso anterior para ajustar los datos.</p>
+                    <p className="text-sm font-medium text-foreground">Sin resultados</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Volvé al paso anterior para ajustar los datos.</p>
                   </div>
                 )}
 
@@ -1480,8 +1483,8 @@ export function QuoteForm() {
                     <table className="w-full min-w-[340px] text-xs sm:text-sm">
                       <thead>
                         <tr
-                          className="text-left text-[11px] font-medium uppercase tracking-widest text-[#808080]"
-                          style={{ borderBottom: "1px solid #ebebeb", background: "#fafafa" }}
+                          className="text-left text-[11px] font-medium uppercase tracking-widest text-muted-foreground"
+                          style={{ borderBottom: "1px solid hsl(var(--border))", background: "hsl(var(--muted))" }}
                         >
                           <th className="px-3 py-2.5">Prestador</th>
                           <th className="px-3 py-2.5">Plan</th>
@@ -1501,7 +1504,7 @@ export function QuoteForm() {
                               variants={fadeUp}
                               initial="hidden"
                               animate="show"
-                              style={{ borderBottom: "1px solid #ebebeb" }}
+                              style={{ borderBottom: "1px solid hsl(var(--border))" }}
                               className="last:border-0"
                             >
                               <td className="px-3 py-2.5">
@@ -1516,39 +1519,38 @@ export function QuoteForm() {
                                     />
                                   ) : (
                                     <span
-                                      className="size-7 shrink-0 rounded bg-[#fafafa]"
+                                      className="size-7 shrink-0 rounded bg-muted"
                                       style={{ boxShadow: shadowBorder }}
                                     />
                                   )}
-                                  <span className="min-w-0 truncate font-medium text-[#171717]">
+                                  <span className="min-w-0 truncate font-medium text-foreground">
                                     {row.providerName}
                                   </span>
                                 </div>
                               </td>
                               <td className="px-3 py-2.5">
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="font-medium leading-tight text-[#171717]">
+                                  <span className="font-medium leading-tight text-foreground">
                                     {row.plan.name}
                                   </span>
                                   {isBest && (
                                     <span
-                                      className="rounded-full px-2 py-0.5 text-[10px] font-medium text-[#0068d6]"
-                                      style={{ background: "#ebf5ff" }}
+                                      className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
                                     >
                                       Mejor
                                     </span>
                                   )}
-                                  <span className="block text-[11px] text-[#808080] sm:hidden">
+                                  <span className="block text-[11px] text-muted-foreground sm:hidden">
                                     {row.plan.type}
                                   </span>
                                 </div>
                                 {row.error && (
-                                  <p className="mt-1 text-xs text-red-600">{row.error}</p>
+                                  <p className="mt-1 text-xs text-destructive">{row.error}</p>
                                 )}
                                 {row.result && (
                                   <button
                                     type="button"
-                                    className="mt-1 text-xs text-[#0072f5] hover:underline sm:hidden"
+                                    className="mt-1 text-xs text-primary hover:underline sm:hidden"
                                     onClick={() =>
                                       setExpandedPlanId((id) => (id === row.plan.id ? null : row.plan.id))
                                     }
@@ -1557,18 +1559,18 @@ export function QuoteForm() {
                                   </button>
                                 )}
                               </td>
-                              <td className="hidden px-3 py-2.5 text-[#808080] sm:table-cell">
+                              <td className="hidden px-3 py-2.5 text-muted-foreground sm:table-cell">
                                 {row.plan.type}
                               </td>
-                              <td className="px-3 py-2.5 text-right text-sm font-semibold tabular-nums text-[#171717] sm:text-base">
+                              <td className="px-3 py-2.5 text-right text-sm font-semibold tabular-nums text-foreground sm:text-base">
                                 {row.result ? formatMoney(row.result.total) : "—"}
                               </td>
                               <td className="hidden px-3 py-2.5 text-right sm:table-cell">
                                 {row.result && (
                                   <button
                                     type="button"
-                                    className="rounded-md px-3 py-1.5 text-xs font-medium text-[#4d4d4d] transition-colors hover:bg-[#fafafa]"
-                                    style={{ boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.08)" }}
+                                    className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+                                    style={{ boxShadow: shadowBorder }}
                                     onClick={() =>
                                       setExpandedPlanId((id) => (id === row.plan.id ? null : row.plan.id))
                                     }
@@ -1593,7 +1595,7 @@ export function QuoteForm() {
                     <div
                       key={`detail-${row.plan.id}`}
                       className="space-y-4 rounded-lg p-5"
-                      style={{ boxShadow: shadowBorder, background: "#fafafa" }}
+                      style={{ boxShadow: shadowBorder, background: "hsl(var(--muted))" }}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
@@ -1606,13 +1608,13 @@ export function QuoteForm() {
                               className="size-8 shrink-0 object-contain"
                             />
                           )}
-                          <p className="min-w-0 text-sm font-medium text-[#171717]">
+                          <p className="min-w-0 text-sm font-medium text-foreground">
                             {row.providerName} · {row.plan.name}
                           </p>
                         </div>
                         <span
-                          className="rounded-full px-3 py-0.5 text-xs font-medium text-[#171717]"
-                          style={{ boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.10)" }}
+                          className="rounded-full px-3 py-0.5 text-xs font-medium text-foreground"
+                          style={{ boxShadow: "0px 0px 0px 1px hsl(var(--primary) / 0.12)" }}
                         >
                           {row.plan.type}
                         </span>
@@ -1624,8 +1626,8 @@ export function QuoteForm() {
                         style={{ boxShadow: shadowBorder }}
                       >
                         <div
-                          className="grid grid-cols-[1fr_90px_120px] gap-2 px-3 py-2 text-xs font-medium text-[#808080]"
-                          style={{ borderBottom: "1px solid #ebebeb" }}
+                          className="grid grid-cols-[1fr_90px_120px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground"
+                          style={{ borderBottom: "1px solid hsl(var(--border))" }}
                         >
                           <div>Integrante / categoría</div>
                           <div className="text-right">Edad</div>
@@ -1635,19 +1637,19 @@ export function QuoteForm() {
                           <div
                             key={`${idx}-${it.category}-${it.memberRole}-${it.memberAge}`}
                             className="grid grid-cols-[1fr_90px_120px] gap-2 px-3 py-2 text-sm"
-                            style={{ borderBottom: "1px solid #ebebeb" }}
+                            style={{ borderBottom: "1px solid hsl(var(--border))" }}
                           >
                             <div className="min-w-0">
-                              <div className="font-medium text-[#171717]">
+                              <div className="font-medium text-foreground">
                                 {it.memberRole === "holder" ? "Titular"
                                   : it.memberRole === "spouse" ? "Cónyuge"
                                   : it.memberRole === "child" ? "Hijo/a"
                                   : "Familiar"}
                               </div>
-                              <div className="truncate text-xs text-[#808080]">{String(it.category)}</div>
+                              <div className="truncate text-xs text-muted-foreground">{String(it.category)}</div>
                             </div>
-                            <div className="text-right tabular-nums text-[#808080]">{Number(it.memberAge)}</div>
-                            <div className="text-right tabular-nums font-medium text-[#171717]">
+                            <div className="text-right tabular-nums text-muted-foreground">{Number(it.memberAge)}</div>
+                            <div className="text-right tabular-nums font-medium text-foreground">
                               {formatMoney(Number(it.price))}
                             </div>
                           </div>
@@ -1658,15 +1660,15 @@ export function QuoteForm() {
                       {lastInputs && (
                         <div className="space-y-1.5 text-sm">
                           <div className="flex items-center justify-between">
-                            <span className="text-[#808080]">Aportes titular</span>
-                            <span className="font-medium tabular-nums text-[#171717]">
+                            <span className="text-muted-foreground">Aportes titular</span>
+                            <span className="font-medium tabular-nums text-foreground">
                               -{formatMoney(lastInputs.holderAporte)}
                             </span>
                           </div>
                           {lastInputs.spouseAporte > 0 && (
                             <div className="flex items-center justify-between">
-                              <span className="text-[#808080]">Aportes cónyuge</span>
-                              <span className="font-medium tabular-nums text-[#171717]">
+                              <span className="text-muted-foreground">Aportes cónyuge</span>
+                              <span className="font-medium tabular-nums text-foreground">
                                 -{formatMoney(lastInputs.spouseAporte)}
                               </span>
                             </div>
@@ -1677,29 +1679,29 @@ export function QuoteForm() {
                       {/* Totals */}
                       <div
                         className="space-y-1.5 pt-3 text-sm"
-                        style={{ borderTop: "1px solid #ebebeb" }}
+                        style={{ borderTop: "1px solid hsl(var(--border))" }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-[#808080]">Subtotal planes</span>
-                          <span className="font-medium tabular-nums text-[#171717]">
+                          <span className="text-muted-foreground">Subtotal planes</span>
+                          <span className="font-medium tabular-nums text-foreground">
                             {formatMoney(result.basePrice)}
                           </span>
                         </div>
                         {result.discounts.map((d, di) => (
                           <div key={`${di}-${d.label}`} className="flex items-center justify-between">
-                            <span className="text-[#808080]">{d.label}</span>
-                            <span className="font-medium tabular-nums text-[#171717]">
+                            <span className="text-muted-foreground">{d.label}</span>
+                            <span className="font-medium tabular-nums text-foreground">
                               -{formatMoney(d.value)}
                             </span>
                           </div>
                         ))}
                         <div
                           className="flex items-center justify-between pt-2"
-                          style={{ borderTop: "1px solid #ebebeb" }}
+                          style={{ borderTop: "1px solid hsl(var(--border))" }}
                         >
-                          <span className="font-medium text-[#171717]">Valor final</span>
+                          <span className="font-medium text-foreground">Valor final</span>
                           <span
-                            className="text-base font-semibold tabular-nums text-[#171717]"
+                            className="text-base font-semibold tabular-nums text-foreground"
                             style={{ letterSpacing: "-0.32px" }}
                           >
                             {formatMoney(result.total)}
@@ -1719,13 +1721,13 @@ export function QuoteForm() {
           {/* ════════════════════ NAVIGATION FOOTER ════════════════════ */}
           <div
             className="flex items-center justify-between px-8 py-5"
-            style={{ borderTop: "1px solid #ebebeb" }}
+            style={{ borderTop: "1px solid hsl(var(--border))" }}
           >
             {/* Back / Cancel */}
             <button
               type="button"
               onClick={handleBack}
-              className="rounded-md px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:bg-[#fafafa]"
+              className="rounded-md px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
               style={{ boxShadow: shadowBorder }}
             >
               {currentStep === 0 ? "Cancelar" : "← Volver"}
@@ -1743,7 +1745,7 @@ export function QuoteForm() {
                       setExpandedPlanId(null);
                       form.reset();
                     }}
-                    className="rounded-md px-4 py-2 text-sm font-medium text-[#4d4d4d] transition-colors hover:bg-[#fafafa]"
+                    className="rounded-md px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
                     style={{ boxShadow: shadowBorder }}
                   >
                     Nueva cotización
@@ -1752,7 +1754,7 @@ export function QuoteForm() {
                     type="button"
                     disabled={planCompareRows.length === 0 || pdfExporting}
                     onClick={() => void handleDownloadPdf()}
-                    className="flex items-center gap-2 rounded-md bg-[#171717] px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                    className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity disabled:opacity-40"
                   >
                     {pdfExporting ? "Generando…" : "Descargar PDF"}
                   </button>
@@ -1762,7 +1764,7 @@ export function QuoteForm() {
                   type="button"
                   disabled={currentStep === 0 && !canAdvanceFromStep0()}
                   onClick={() => void handleNext()}
-                  className="flex items-center gap-1.5 rounded-md bg-[#171717] px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                  className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity disabled:opacity-40"
                 >
                   {currentStep === 2 ? "Cotizar" : "Siguiente"}
                   <span aria-hidden className="text-base leading-none">›</span>
