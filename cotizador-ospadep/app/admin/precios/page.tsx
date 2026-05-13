@@ -504,7 +504,9 @@ export default function AdminPricesPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg">Actualización rápida</CardTitle>
                 <CardDescription>
-                  Seleccioná período, alcance y porcentaje. Revisá y aplicá.
+                  Seleccioná período, alcance y porcentaje. Revisá y aplicá. Al aplicar, el mes destino
+                  queda completo: los planes sin regla de aumento copian la tarifa del mes base (o la que ya
+                  hubiera en destino si aplicás varios lotes al mismo mes).
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -634,10 +636,12 @@ export default function AdminPricesPage() {
                     <div>
                       <CardTitle className="text-lg">Previsualización del batch</CardTitle>
                       <CardDescription>
-                        Muestra de cambios a aplicar. Total impactado:{" "}
+                        Filas que se escribirán en el mes destino (incluye carry-forward). Total:{" "}
                         <span className="font-medium tabular-nums">
                           {preview[0]?.total_rows ?? preview.length}
                         </span>
+                        . La tabla prioriza filas donde el precio cambia; el resto queda igual salvo
+                        materialización del mes.
                       </CardDescription>
                     </div>
                     <Badge variant="secondary">Antes → Después</Badge>

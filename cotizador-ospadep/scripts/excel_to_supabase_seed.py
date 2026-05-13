@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 import openpyxl
 
@@ -43,6 +44,7 @@ def norm(s: object) -> str:
 
 
 def to_float(v: object) -> Optional[float]:
+    """Convierte celdas numéricas o texto con formato es-AR (miles con punto, decimales con coma)."""
     if v is None:
         return None
     if isinstance(v, (int, float)):
@@ -50,6 +52,24 @@ def to_float(v: object) -> Optional[float]:
     s = str(v).strip()
     if s == "":
         return None
+    s = s.replace("$", "").replace(" ", "")
+
+    # Decimal con coma final (ej. 1234,56 o 1.234,56)
+    if "," in s and re.search(r",\d{1,4}\s*$", s):
+        s2 = s.replace(".", "") if s.count(".") > 0 else s
+        s2 = s2.replace(",", ".")
+        try:
+            return float(s2)
+        except ValueError:
+            pass
+
+    # Miles con punto(s) sin coma decimal (ej. 136.762 o 1.023.456)
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+", s):
+        try:
+            return float(s.replace(".", ""))
+        except ValueError:
+            pass
+
     s = s.replace(".", "").replace(",", ".") if re.search(r"\d+,\d+", s) else s
     try:
         return float(s)
@@ -86,9 +106,23 @@ def slugify(name: str) -> str:
     return s
 
 
-def emit_seed_sql(providers: list[Provider], plans: list[Plan], prices: list[Price]) -> str:
+def emit_seed_sql(
+    providers: list[Provider],
+    plans: list[Plan],
+    prices: list[Price],
+    *,
+    effective_month: str,
+    header_title: str,
+    set_active_effective_month: bool,
+) -> str:
+    """Genera SQL compatible con precios mensuales (effective_month + upsert por índice único)."""
     lines: list[str] = []
-    lines.append("-- Seed generado desde Excel (MARZO 2026)")
+    lines.append(f"-- Import generado desde Excel ({header_title})")
+    lines.append(f"-- Vigencia: effective_month = {effective_month}")
+    lines.append("-- Ejecutar en Supabase SQL Editor. Requiere índice único prices_unique_month")
+    lines.append("--   (plan_id, role, age_min, age_max, is_particular, effective_month).")
+    if not set_active_effective_month:
+        lines.append("-- Luego en Admin → Precios guardá active_effective_month = " + effective_month[:7] + ".")
     lines.append("begin;")
     lines.append("")
 
@@ -112,21 +146,37 @@ def emit_seed_sql(providers: list[Provider], plans: list[Plan], prices: list[Pri
         )
     lines.append("")
 
-    lines.append("-- Prices")
+    lines.append("-- Prices (upsert por vigencia mensual)")
+    em = sql_str(effective_month)
     for pr in prices:
         age_max_sql = "null" if pr.age_max is None else str(pr.age_max)
         lines.append(
-            "insert into public.prices (plan_id, age_min, age_max, role, price, is_particular)\n"
+            "insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)\n"
             "select pl.id, "
-            f"{pr.age_min}, {age_max_sql}, {sql_str(pr.role)}::public.price_role, {pr.price:.2f}, {str(pr.is_particular).lower()}\n"
+            f"{sql_str(pr.role)}::public.price_role, {pr.age_min}, {age_max_sql}, {str(pr.is_particular).lower()}, "
+            f"{pr.price:.2f}, {em}::date, now()\n"
             "from public.plans pl\n"
             "join public.providers p on p.id = pl.provider_id\n"
             f"where p.slug = {sql_str(pr.provider_slug)}\n"
             f"  and pl.name = {sql_str(pr.plan_name)}\n"
             f"  and pl.type = {sql_str(pr.plan_type)}\n"
-            "on conflict do nothing;"
+            "on conflict (plan_id, role, age_min, age_max, is_particular, effective_month)\n"
+            "do update set\n"
+            "  price = excluded.price,\n"
+            "  updated_at = excluded.updated_at;"
         )
     lines.append("")
+
+    if set_active_effective_month:
+        lines.append("-- Cotizador: vigencia activa global")
+        lines.append(
+            "insert into public.app_settings (key, value_text, updated_at)\n"
+            f"values ('active_effective_month', {em}, now())\n"
+            "on conflict (key) do update set\n"
+            "  value_text = excluded.value_text,\n"
+            "  updated_at = excluded.updated_at;"
+        )
+        lines.append("")
 
     lines.append("commit;")
     lines.append("")
@@ -284,6 +334,20 @@ def parse_swiss(ws, plan_names: list[str], provider_slug: str = "swiss-medical")
     return plans, prices
 
 
+def _medife_bronze_triplet_starts(ws, header_r: int) -> list[int]:
+    """Columnas donde hay encabezado BRONCE/PLATA/ORO contiguo en la fila de cabecera."""
+    out: list[int] = []
+    for c in range(1, max(1, ws.max_column - 2) + 1):
+        if norm(ws.cell(header_r, c).value).upper() != "BRONCE":
+            continue
+        if norm(ws.cell(header_r, c + 1).value).upper() != "PLATA":
+            continue
+        if norm(ws.cell(header_r, c + 2).value).upper() != "ORO":
+            continue
+        out.append(c)
+    return out
+
+
 def parse_medife(ws) -> tuple[list[Plan], list[Price]]:
     provider_slug = "medife"
     plans = [
@@ -292,12 +356,40 @@ def parse_medife(ws) -> tuple[list[Plan], list[Price]]:
         Plan(provider_slug=provider_slug, name="ORO", type="OPCION MEDIFE"),
     ]
 
-    # Detectar el bloque "vigente": en la fila 16 aparecen BRONCE/PLATA/ORO repetidos.
-    header_r = 16
-    bron_cols = [c for c in range(1, ws.max_column + 1) if norm(ws.cell(header_r, c).value).upper() == "BRONCE"]
-    if not bron_cols:
+    # Fila de encabezados BRONCE/PLATA/ORO: en algunos libros está en 16, en otros (p. ej. Mayo 2026) en 17+.
+    header_r: Optional[int] = None
+    for r in range(8, min(ws.max_row, 80) + 1):
+        has_bronce = any(
+            norm(ws.cell(r, c).value).upper() == "BRONCE" for c in range(1, min(ws.max_column, 60) + 1)
+        )
+        if not has_bronce:
+            continue
+        nxt = norm(ws.cell(r + 1, 2).value).upper()
+        if "INDIV" in nxt or "MATRIMONIO" in nxt:
+            header_r = r
+            break
+    if header_r is None:
         return plans, []
-    start = max(bron_cols)  # bloque más a la derecha
+
+    triplets = _medife_bronze_triplet_starts(ws, header_r)
+    if not triplets:
+        return plans, []
+
+    # Si hay varias ternas (escenarios), usamos la que tenga mayor BRONCE en la primera fila INDIV
+    # (suele ser el tarifario vigente a la derecha; si el libro trae solo una terna, no cambia el resultado).
+    first_indiv_r: Optional[int] = None
+    for r in range(header_r + 1, min(ws.max_row, header_r + 35) + 1):
+        if norm(ws.cell(r, 2).value).upper().startswith("INDIV"):
+            first_indiv_r = r
+            break
+    if first_indiv_r is not None:
+        start = max(
+            triplets,
+            key=lambda c: to_float(ws.cell(first_indiv_r, c).value) or -1.0,
+        )
+    else:
+        start = triplets[0]
+
     cols = {"BRONCE": start, "PLATA": start + 1, "ORO": start + 2}
 
     prices: list[Price] = []
@@ -318,9 +410,8 @@ def parse_medife(ws) -> tuple[list[Plan], list[Price]]:
                 )
             )
 
-    # Parse de filas 17..30 según muestra
     individual_ranges: list[tuple[int, Optional[int], dict[str, float]]] = []
-    for r in range(17, min(ws.max_row, 60) + 1):
+    for r in range(header_r + 1, min(ws.max_row, 120) + 1):
         label = norm(ws.cell(r, 2).value)
         if label == "":
             continue
@@ -358,51 +449,71 @@ def parse_medife(ws) -> tuple[list[Plan], list[Price]]:
 
 
 def parse_ospadep_salud(ws) -> tuple[list[Plan], list[Price]]:
+    """OS 25 y OS 300 comparten filas FRANJA (columnas distintas); OS 900 es un bloque mas abajo."""
     provider_slug = "ospadep"
     plans: list[Plan] = []
     prices: list[Price] = []
 
-    # Tabla inicia en fila 16. Hay bloques por plan:
-    # OS 25: precios en col6 (con OS) y col7 (sin OS/directo)
-    # OS 300: col10 y col11
-    # OS 900: más abajo con misma estructura col6/col7 (solo con/sin), pero plan está en col2
-    # Vamos a detectar dinámicamente leyendo fila 16.
+    def row_has_os25_price_header(r: int) -> bool:
+        v6 = norm(ws.cell(r, 6).value).lower()
+        return "os 25" in norm(ws.cell(r, 2).value).lower() and "con obra social" in v6
 
-    r0 = 16
-    plan_blocks: list[tuple[str, int, int]] = []
-    for (plan_name, con_col, sin_col) in [
-        ("OS 25", 6, 7),
-        ("OS 300", 10, 11),
-        ("OS 900", 6, 7),
-    ]:
-        # si el plan aparece en alguna celda de la hoja, lo tomamos
-        found = False
-        for r in range(1, ws.max_row + 1):
-            for c in range(1, min(ws.max_column, 15) + 1):
-                if norm(ws.cell(r, c).value) == plan_name:
-                    found = True
-                    break
-            if found:
-                break
-        if found:
-            plan_blocks.append((plan_name, con_col, sin_col))
-            plans.append(Plan(provider_slug=provider_slug, name=plan_name, type="OSPADEP SALUD"))
+    row_os25_header = next((r for r in range(1, min(ws.max_row, 120) + 1) if row_has_os25_price_header(r)), None)
+    if row_os25_header is None:
+        return plans, prices
 
-    for r in range(1, ws.max_row + 1):
-        label = norm(ws.cell(r, 2).value)
-        if not label.upper().startswith("FRANJA") and "HIJO" not in label.upper():
-            continue
+    os300_col: Optional[int] = None
+    for c in range(1, min(ws.max_column, 30) + 1):
+        if norm(ws.cell(row_os25_header, c).value) == "OS 300":
+            os300_col = c
+            break
+    if os300_col is None:
+        return plans, prices
+    os300_con, os300_sin = os300_col + 1, os300_col + 2
 
-        if label.upper().startswith("FRANJA"):
-            # "FRANJA 1 (18-27 AÑOS)" ... "FRANJA 8 (>=65 AÑOS)"
-            age_min, age_max = parse_age_range(label.replace("A�OS", "AÑOS"))
-            roles = ("individual", "conyuge")
-        else:
-            # "HIJO/A (Cada Hijo)"
-            age_min, age_max = 0, None
-            roles = ("primer_hijo",)
+    row_os900_header = next(
+        (
+            r
+            for r in range(row_os25_header + 1, min(ws.max_row, 200) + 1)
+            if norm(ws.cell(r, 2).value) == "OS 900" and "con obra social" in norm(ws.cell(r, 6).value).lower()
+        ),
+        None,
+    )
 
-        for plan_name, con_col, sin_col in plan_blocks:
+    plan_blocks: list[tuple[str, int, int, int, int]] = []
+    r_os25_data_start = row_os25_header + 1
+    r_os25_data_end = (row_os900_header - 1) if row_os900_header else ws.max_row
+    plan_blocks.append(("OS 25", 6, 7, r_os25_data_start, r_os25_data_end))
+    plan_blocks.append(("OS 300", os300_con, os300_sin, r_os25_data_start, r_os25_data_end))
+    plans.extend(
+        [
+            Plan(provider_slug=provider_slug, name="OS 25", type="OSPADEP SALUD"),
+            Plan(provider_slug=provider_slug, name="OS 300", type="OSPADEP SALUD"),
+        ]
+    )
+
+    if row_os900_header is not None:
+        r_os900_start = row_os900_header + 1
+        r_os900_end = ws.max_row
+        plan_blocks.append(("OS 900", 6, 7, r_os900_start, r_os900_end))
+        plans.append(Plan(provider_slug=provider_slug, name="OS 900", type="OSPADEP SALUD"))
+
+    def normalize_franja_label(label: str) -> str:
+        return re.sub(r"A\s*.?\s*OS", "AÑOS", label, flags=re.IGNORECASE)
+
+    for plan_name, con_col, sin_col, r_lo, r_hi in plan_blocks:
+        for r in range(r_lo, r_hi + 1):
+            label = norm(ws.cell(r, 2).value)
+            if not label.upper().startswith("FRANJA") and "HIJO" not in label.upper():
+                continue
+
+            if label.upper().startswith("FRANJA"):
+                age_min, age_max = parse_age_range(normalize_franja_label(label))
+                roles = ("individual", "conyuge")
+            else:
+                age_min, age_max = 0, None
+                roles = ("primer_hijo",)
+
             con_v = to_float(ws.cell(r, con_col).value)
             sin_v = to_float(ws.cell(r, sin_col).value)
             if con_v is not None and con_v > 0:
@@ -437,13 +548,17 @@ def parse_ospadep_salud(ws) -> tuple[list[Plan], list[Price]]:
     return plans, prices
 
 
-def main() -> int:
-    excel_path = Path(__file__).resolve().parents[2] / "PLANES A LA VENTA - MARZO 2026.xlsx"
-    out_path = Path(__file__).resolve().parents[1] / "supabase" / "seed.sql"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+def load_workbook_from_excel(excel_path: Path):
+    return openpyxl.load_workbook(excel_path, data_only=True)
 
-    wb = openpyxl.load_workbook(excel_path, data_only=True)
 
+def build_seed_from_workbook(
+    wb,
+    *,
+    header_title: str,
+    effective_month: str,
+    set_active_effective_month: bool,
+) -> str:
     providers = [
         Provider(name="OSPADEP", slug="ospadep"),
         Provider(name="Medife", slug="medife"),
@@ -465,7 +580,6 @@ def main() -> int:
         elif sheet_name == "OSPADEP SALUD":
             pl, pr = parse_ospadep_salud(ws)
         elif sheet_name.startswith("SW "):
-            # Consolidar Swiss: en estas hojas los planes cambian por pestaña
             if sheet_name == "SW NUBIAL":
                 pl, pr = parse_swiss(ws, plan_names=["MS"])
             elif sheet_name == "SW SB02":
@@ -473,20 +587,17 @@ def main() -> int:
             else:
                 pl, pr = parse_swiss(ws, plan_names=["PO62", "PO64", "SB04"])
         else:
-            # ACTIVA SALUD no trae precios en esta versión; lo dejamos fuera por ahora.
             pl, pr = [], []
 
         plans.extend(pl)
         prices.extend(pr)
 
-    # Deduplicar planes
     plans_unique: dict[tuple[str, str, str], Plan] = {}
     for pl in plans:
         plans_unique[(pl.provider_slug, pl.name, pl.type)] = pl
     plans = list(plans_unique.values())
     plans.sort(key=lambda x: (x.provider_slug, x.type, x.name))
 
-    # Deduplicar precios (exact duplicates)
     prices_unique: dict[tuple, Price] = {}
     for pr in prices:
         key = (
@@ -512,10 +623,75 @@ def main() -> int:
         )
     )
 
-    seed = emit_seed_sql(providers=providers, plans=plans, prices=prices)
+    return emit_seed_sql(
+        providers=providers,
+        plans=plans,
+        prices=prices,
+        effective_month=effective_month,
+        header_title=header_title,
+        set_active_effective_month=set_active_effective_month,
+    )
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parents[2]
+    default_excel = repo_root / "PLANES A LA VENTA - MAYO 2026.xlsx"
+    default_out = Path(__file__).resolve().parents[1] / "docs" / "import-prices-from-excel.sql"
+
+    parser = argparse.ArgumentParser(
+        description="Genera SQL de importación de precios desde el Excel de planes (Supabase, vigencia mensual).",
+    )
+    parser.add_argument(
+        "--excel",
+        type=Path,
+        default=default_excel,
+        help=f"Ruta al .xlsx (default: {default_excel})",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=default_out,
+        help=f"Archivo .sql de salida (default: {default_out})",
+    )
+    parser.add_argument(
+        "--effective-month",
+        type=str,
+        default="2026-05-01",
+        help="Primer día del mes de vigencia en formato YYYY-MM-DD (default: 2026-05-01)",
+    )
+    parser.add_argument(
+        "--title",
+        type=str,
+        default="MAYO 2026",
+        help="Texto descriptivo para el encabezado del SQL",
+    )
+    parser.add_argument(
+        "--set-active-effective-month",
+        action="store_true",
+        help="Incluye upsert de app_settings.active_effective_month al mismo mes",
+    )
+    args = parser.parse_args()
+
+    excel_path = args.excel.resolve()
+    if not excel_path.is_file():
+        print(f"Error: no existe el archivo {excel_path}")
+        return 1
+
+    wb = load_workbook_from_excel(excel_path)
+    seed = build_seed_from_workbook(
+        wb,
+        header_title=args.title,
+        effective_month=args.effective_month,
+        set_active_effective_month=args.set_active_effective_month,
+    )
+
+    out_path = args.out.resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(seed, encoding="utf-8")
-    print(f"OK: seed generado en {out_path}")
-    print(f"Plans: {len(plans)} | Prices: {len(prices)}")
+    n_prices = seed.count("insert into public.prices (plan_id, role")
+    n_plans = seed.count("insert into public.plans (provider_id")
+    print(f"OK: SQL generado en {out_path}")
+    print(f"Inserts planes: {n_plans} | Upserts precios: {n_prices}")
     return 0
 
 

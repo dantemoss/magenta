@@ -1,149 +1,17 @@
--- Precios con histórico mensual + batches idempotentes
--- Ejecutar en Supabase SQL Editor.
+-- Carry-forward al aplicar un batch parcial (mismo target_month).
+--
+-- Contexto comercial: los aumentos llegan en distintos momentos por prestador.
+-- Antes solo se insertaban filas con pct <> 0, dejando el mes destino incompleto
+-- y rompiendo cotizaciones al usar active_effective_month global.
+--
+-- Comportamiento nuevo:
+-- - Se escriben TODAS las filas del mes origen en el mes destino.
+-- - Si aplica regla (scope_ok y pct <> 0): precio = tarifa origen * (1 + pct/100).
+-- - Si no: precio = COALESCE(tarifa ya cargada en mes destino, tarifa origen).
+--   Así, un segundo batch (otro prestador) no pisa aumentos ya aplicados en destino.
+--
+-- Ejecutar en Supabase SQL Editor después de tener preview/apply definidos.
 
--- Requiere: tabla `plans` con provider_id y tabla `providers`.
--- Requiere: función public.is_admin(uid uuid) (ver supabase-auth-roles.sql).
-
--- 0) Extensiones útiles
-create extension if not exists pgcrypto;
-
--- 1) Columna de vigencia mensual y auditoría en prices
-alter table public.prices
-  add column if not exists id uuid default gen_random_uuid(),
-  add column if not exists effective_month date,
-  add column if not exists updated_at timestamptz,
-  add column if not exists updated_by uuid,
-  add column if not exists batch_id uuid;
-
--- Backfill: asumir que los precios existentes corresponden al mes actual
-update public.prices
-set effective_month = date_trunc('month', now())::date
-where effective_month is null;
-
-alter table public.prices
-  alter column id set not null,
-  alter column effective_month set not null;
-
--- Migrar PK histórica a PK por id (evita choque entre vigencias mensuales)
-do $$
-begin
-  if exists (
-    select 1
-    from pg_constraint c
-    join pg_class t on t.oid = c.conrelid
-    join pg_namespace n on n.oid = t.relnamespace
-    where n.nspname = 'public'
-      and t.relname = 'prices'
-      and c.conname = 'prices_pkey'
-  ) then
-    alter table public.prices drop constraint prices_pkey;
-  end if;
-end $$;
-
-alter table public.prices
-  add constraint prices_pkey primary key (id);
-
--- Unique por fila y mes (evita duplicados y permite idempotencia de batches)
-create unique index if not exists prices_unique_month
-on public.prices(plan_id, role, age_min, age_max, is_particular, effective_month);
-
--- 2) Tablas de batch y reglas (% por prestador/plan)
-create table if not exists public.price_batches (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  created_by uuid not null default auth.uid(),
-  source_month date not null,
-  target_month date not null,
-  status text not null default 'draft' check (status in ('draft','previewed','applied','failed')),
-  notes text
-);
-
-create table if not exists public.price_batch_rules (
-  id uuid primary key default gen_random_uuid(),
-  batch_id uuid not null references public.price_batches(id) on delete cascade,
-  provider_id uuid null references public.providers(id) on delete cascade,
-  plan_id uuid null references public.plans(id) on delete cascade,
-  pct numeric not null,
-  scope text not null default 'both' check (scope in ('both','particular','no_particular')),
-  created_at timestamptz not null default now()
-);
-
-create index if not exists price_batch_rules_batch_id_idx
-on public.price_batch_rules(batch_id);
-
--- 3) RLS
-alter table public.price_batches enable row level security;
-alter table public.price_batch_rules enable row level security;
-
-drop policy if exists "price_batches admin all" on public.price_batches;
-create policy "price_batches admin all"
-on public.price_batches for all
-to authenticated
-using (public.is_admin(auth.uid()))
-with check (public.is_admin(auth.uid()));
-
-drop policy if exists "price_batch_rules admin all" on public.price_batch_rules;
-create policy "price_batch_rules admin all"
-on public.price_batch_rules for all
-to authenticated
-using (public.is_admin(auth.uid()))
-with check (public.is_admin(auth.uid()));
-
--- 4) Helpers: normalizar mes (1er día) y regla efectiva
-create or replace function public.month_start(d date)
-returns date
-language sql
-immutable
-as $$
-  select date_trunc('month', d)::date;
-$$;
-
--- Regla efectiva por plan (precedencia: plan_id > provider_id)
-create or replace function public.get_effective_pct(
-  batch uuid,
-  provider uuid,
-  plan uuid
-)
-returns numeric
-language sql
-stable
-as $$
-  select coalesce(
-    (select r.pct from public.price_batch_rules r
-     where r.batch_id = batch and r.plan_id = plan
-     order by r.created_at desc
-     limit 1),
-    (select r.pct from public.price_batch_rules r
-     where r.batch_id = batch and r.provider_id = provider and r.plan_id is null
-     order by r.created_at desc
-     limit 1),
-    0
-  );
-$$;
-
-create or replace function public.get_effective_scope(
-  batch uuid,
-  provider uuid,
-  plan uuid
-)
-returns text
-language sql
-stable
-as $$
-  select coalesce(
-    (select r.scope from public.price_batch_rules r
-     where r.batch_id = batch and r.plan_id = plan
-     order by r.created_at desc
-     limit 1),
-    (select r.scope from public.price_batch_rules r
-     where r.batch_id = batch and r.provider_id = provider and r.plan_id is null
-     order by r.created_at desc
-     limit 1),
-    'both'
-  );
-$$;
-
--- 5) Preview (muestra ejemplos + total; carry-forward: ver comentario en apply)
 create or replace function public.preview_price_batch(
   batch uuid,
   sample_limit int default 30
@@ -288,10 +156,6 @@ begin
 end;
 $$;
 
--- 6) Apply (transaccional + idempotente; carry-forward de tarifas al mes destino)
---    Todas las filas del mes origen se materializan en el mes destino.
---    Sin regla aplicable (pct=0 o fuera de scope): se usa precio ya existente en
---    destino si hay (no pisar otro batch), si no la tarifa del mes origen.
 create or replace function public.apply_price_batch(batch uuid)
 returns json
 language plpgsql
@@ -412,4 +276,3 @@ exception when others then
   raise;
 end;
 $$;
-
