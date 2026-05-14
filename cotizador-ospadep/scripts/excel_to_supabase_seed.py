@@ -309,6 +309,9 @@ def parse_swiss(ws, plan_names: list[str], provider_slug: str = "swiss-medical")
             age_min, age_max = 0, 65
         elif "MAYOR" in label_u:
             age_min, age_max = 66, None
+        elif "CAPIT" in label_u:
+            # Hojas Swiss tipo "SW SB02": fila "Por cápita" = misma cuota base 0-65 para todos los roles.
+            age_min, age_max = 0, 65
         else:
             continue
 

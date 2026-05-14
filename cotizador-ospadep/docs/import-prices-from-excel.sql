@@ -2461,8 +2461,9 @@ on conflict (plan_id, role, age_min, age_max, is_particular, effective_month)
 do update set
   price = excluded.price,
   updated_at = excluded.updated_at;
+-- Swiss SB02: tarifario Excel (hoja SW SB02). Corrige parse erróneo 4647 en banda 66+; agrega 0-65 desde fila "Por cápita".
 insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
-select pl.id, 'conyuge'::public.price_role, 66, null, false, 4647.00, '2026-05-01'::date, now()
+select pl.id, 'conyuge'::public.price_role, 0, 65, false, 233737.00, '2026-05-01'::date, now()
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'
@@ -2473,7 +2474,7 @@ do update set
   price = excluded.price,
   updated_at = excluded.updated_at;
 insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
-select pl.id, 'familiar_cargo'::public.price_role, 66, null, false, 4647.00, '2026-05-01'::date, now()
+select pl.id, 'familiar_cargo'::public.price_role, 0, 65, false, 233737.00, '2026-05-01'::date, now()
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'
@@ -2484,7 +2485,7 @@ do update set
   price = excluded.price,
   updated_at = excluded.updated_at;
 insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
-select pl.id, 'individual'::public.price_role, 66, null, false, 4647.00, '2026-05-01'::date, now()
+select pl.id, 'individual'::public.price_role, 0, 65, false, 233737.00, '2026-05-01'::date, now()
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'
@@ -2495,7 +2496,51 @@ do update set
   price = excluded.price,
   updated_at = excluded.updated_at;
 insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
-select pl.id, 'primer_hijo'::public.price_role, 66, null, false, 4647.00, '2026-05-01'::date, now()
+select pl.id, 'primer_hijo'::public.price_role, 0, 65, false, 233737.00, '2026-05-01'::date, now()
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict (plan_id, role, age_min, age_max, is_particular, effective_month)
+do update set
+  price = excluded.price,
+  updated_at = excluded.updated_at;
+insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
+select pl.id, 'conyuge'::public.price_role, 66, null, false, 793078.00, '2026-05-01'::date, now()
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict (plan_id, role, age_min, age_max, is_particular, effective_month)
+do update set
+  price = excluded.price,
+  updated_at = excluded.updated_at;
+insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
+select pl.id, 'familiar_cargo'::public.price_role, 66, null, false, 793078.00, '2026-05-01'::date, now()
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict (plan_id, role, age_min, age_max, is_particular, effective_month)
+do update set
+  price = excluded.price,
+  updated_at = excluded.updated_at;
+insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
+select pl.id, 'individual'::public.price_role, 66, null, false, 793078.00, '2026-05-01'::date, now()
+from public.plans pl
+join public.providers p on p.id = pl.provider_id
+where p.slug = 'swiss-medical'
+  and pl.name = 'SB02'
+  and pl.type = 'SWISS'
+on conflict (plan_id, role, age_min, age_max, is_particular, effective_month)
+do update set
+  price = excluded.price,
+  updated_at = excluded.updated_at;
+insert into public.prices (plan_id, role, age_min, age_max, is_particular, price, effective_month, updated_at)
+select pl.id, 'primer_hijo'::public.price_role, 66, null, false, 793078.00, '2026-05-01'::date, now()
 from public.plans pl
 join public.providers p on p.id = pl.provider_id
 where p.slug = 'swiss-medical'

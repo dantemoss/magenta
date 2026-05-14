@@ -7,6 +7,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
 import { monthStartISO } from "@/lib/month";
 import type { PriceRole, PriceRow } from "@/lib/engine/strategies";
+import { dedupePriceRowsPreferHigherTariff } from "@/lib/prices/dedupe-price-rows";
 import { providerLogoSrc } from "@/lib/provider-logos";
 
 import { Badge } from "@/components/ui/badge";
@@ -116,7 +117,7 @@ export default function PlanPricesPage() {
         if (!alive) return;
         setProviders((provs ?? []) as ProviderRow[]);
         setPlans((pls ?? []) as PlanRow[]);
-        setPrices((prs ?? []) as PriceRow[]);
+        setPrices(dedupePriceRowsPreferHigherTariff((prs ?? []) as PriceRow[]));
       } catch (e) {
         if (!alive) return;
         setError(getErrorMessage(e, "Error cargando precios base"));

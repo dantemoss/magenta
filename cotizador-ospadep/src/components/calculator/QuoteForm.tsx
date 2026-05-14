@@ -25,6 +25,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatMoneyCompact } from "@/lib/money";
 import { monthStartISO } from "@/lib/month";
+import { dedupePriceRowsPreferHigherTariff } from "@/lib/prices/dedupe-price-rows";
 import { providerLogoSrc } from "@/lib/provider-logos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -530,7 +531,7 @@ export function QuoteForm() {
           .order("age_min");
         if (prErr) throw prErr;
         if (!alive) return;
-        const rows = (data ?? []) as PriceRow[];
+        const rows = dedupePriceRowsPreferHigherTariff((data ?? []) as PriceRow[]);
         const byPlan: Record<string, PriceRow[]> = {};
         for (const r of rows) {
           const id = r.plan_id;
