@@ -77,29 +77,82 @@ const COLOR_DANGER_BG = "#fdecec";
 
 const ACCENT_BY_INDEX = [COLOR_SLATE, COLOR_SLATE_MID, COLOR_SLATE_LIGHT] as const;
 
-let pdfFontsOrigin: string | null = null;
+const PDF_FONT_PATHS = {
+  poppinsRegular: "/fonts/Poppins-Regular.ttf",
+  poppinsBold: "/fonts/Poppins-Bold.ttf",
+  ralewayBold: "/fonts/Raleway-Bold.ttf",
+  ralewayBlack: "/fonts/Raleway-Black.ttf",
+} as const;
 
-export function ensureComparisonPdfFonts(origin: string): void {
-  if (pdfFontsOrigin === origin) return;
-  try {
-    Font.register({
-      family: "Poppins",
-      fonts: [
-        { src: `${origin}/fonts/Poppins-Regular.ttf`, fontWeight: 400 },
-        { src: `${origin}/fonts/Poppins-Bold.ttf`, fontWeight: 700 },
-      ],
-    });
-    Font.register({
-      family: "Raleway",
-      fonts: [
-        { src: `${origin}/fonts/Raleway-Bold.ttf`, fontWeight: 700 },
-        { src: `${origin}/fonts/Raleway-Black.ttf`, fontWeight: 900 },
-      ],
-    });
-    pdfFontsOrigin = origin;
-  } catch {
-    pdfFontsOrigin = origin;
+let pdfFontsReady: Promise<void> | null = null;
+
+function isSupportedFontBuffer(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 4) return false;
+  const sig = new Uint8Array(buffer, 0, 4);
+  const isTrueType =
+    sig[0] === 0x00 && sig[1] === 0x01 && sig[2] === 0x00 && sig[3] === 0x00;
+  const isOpenType =
+    sig[0] === 0x4f && sig[1] === 0x54 && sig[2] === 0x54 && sig[3] === 0x4f;
+  const isWoff =
+    sig[0] === 0x77 && sig[1] === 0x4f && sig[2] === 0x46 && sig[3] === 0x46;
+  const isWoff2 =
+    sig[0] === 0x77 && sig[1] === 0x4f && sig[2] === 0x46 && sig[3] === 0x32;
+  return isTrueType || isOpenType || isWoff || isWoff2;
+}
+
+async function fetchFontBuffer(origin: string, path: string): Promise<ArrayBuffer> {
+  const res = await fetch(`${origin}${path}`);
+  if (!res.ok) {
+    throw new Error(`No se pudo cargar la fuente (${res.status}): ${path}`);
   }
+  const buffer = await res.arrayBuffer();
+  if (!isSupportedFontBuffer(buffer)) {
+    throw new Error(
+      `Formato de fuente inválido en ${path}. Verificá que el archivo .ttf esté en public/fonts.`,
+    );
+  }
+  return buffer;
+}
+
+/** react-pdf solo acepta URL o data URI en `src`, no ArrayBuffer/Uint8Array. */
+function fontBufferToDataUri(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return `data:font/ttf;base64,${btoa(binary)}`;
+}
+
+/** Registra Poppins y Raleway en react-pdf (data URI tras validar el .ttf). */
+export function ensureComparisonPdfFonts(origin: string): Promise<void> {
+  if (!pdfFontsReady) {
+    pdfFontsReady = (async () => {
+      const [poppinsRegular, poppinsBold, ralewayBold, ralewayBlack] =
+        await Promise.all([
+          fetchFontBuffer(origin, PDF_FONT_PATHS.poppinsRegular),
+          fetchFontBuffer(origin, PDF_FONT_PATHS.poppinsBold),
+          fetchFontBuffer(origin, PDF_FONT_PATHS.ralewayBold),
+          fetchFontBuffer(origin, PDF_FONT_PATHS.ralewayBlack),
+        ]);
+
+      Font.register({
+        family: "Poppins",
+        fonts: [
+          { src: fontBufferToDataUri(poppinsRegular), fontWeight: 400 },
+          { src: fontBufferToDataUri(poppinsBold), fontWeight: 700 },
+        ],
+      });
+      Font.register({
+        family: "Raleway",
+        fonts: [
+          { src: fontBufferToDataUri(ralewayBold), fontWeight: 700 },
+          { src: fontBufferToDataUri(ralewayBlack), fontWeight: 900 },
+        ],
+      });
+    })();
+  }
+  return pdfFontsReady;
 }
 
 const styles = StyleSheet.create({
@@ -490,7 +543,7 @@ const styles = StyleSheet.create({
   footerContactLine: {
     fontSize: 8,
     fontFamily: "Poppins",
-    fontWeight: 600,
+    fontWeight: 700,
     color: COLOR_TEXT,
     marginBottom: 3,
     textAlign: "right",

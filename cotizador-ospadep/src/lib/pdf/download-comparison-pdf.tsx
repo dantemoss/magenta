@@ -97,7 +97,7 @@ export async function downloadComparisonPdf(params: {
   bestTotal: number | null;
 }): Promise<void> {
   if (typeof window !== "undefined") {
-    ensureComparisonPdfFonts(window.location.origin);
+    await ensureComparisonPdfFonts(window.location.origin);
   }
   const now = new Date();
   const quoteDateLabel = formatQuoteDate(now);
