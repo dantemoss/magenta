@@ -1,7 +1,6 @@
--- Fix SB03 (plan_id ambiguous en preview_price_batch): la definición corregida y al día
--- está en docs/fix-price-batch-carry-forward.sql junto con apply_price_batch (carry-forward).
+-- Fix SB03/SB06 (plan_id ambiguous / record b has no field plan_id)
 --
--- Ejecutá en Supabase SQL Editor el archivo:
---   docs/fix-price-batch-carry-forward.sql
+-- Ejecutá en Supabase SQL Editor:
+--   docs/fix-preview-price-batch-b-record-plan-id.sql
 --
--- Ese script reemplaza preview_price_batch y apply_price_batch por las versiones actuales.
+-- Ese script reemplaza preview_price_batch y agrega preview_price_batch_by_provider.

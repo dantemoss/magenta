@@ -25,6 +25,10 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { formatMoney, formatMoneyCompact } from "@/lib/money";
 import { monthStartISO } from "@/lib/month";
+import {
+  distinctMonthsDesc,
+  resolveEffectiveMonth,
+} from "@/lib/prices/effective-month";
 import { dedupePriceRowsPreferHigherTariff } from "@/lib/prices/dedupe-price-rows";
 import { providerLogoSrc } from "@/lib/provider-logos";
 import { Button } from "@/components/ui/button";
@@ -371,7 +375,7 @@ export function QuoteForm() {
   const [expandedPlanId, setExpandedPlanId] = React.useState<string | null>(null);
   const [currentStep, setCurrentStep] = React.useState(0);
   const [stepDir, setStepDir] = React.useState(1);
-  const [effectiveMonth, setEffectiveMonth] = React.useState<string>(() => monthStartISO());
+  const [effectiveMonth, setEffectiveMonth] = React.useState<string | null>(null);
 
   const [providers, setProviders] = React.useState<ProviderRow[]>([]);
   const [plans, setPlans] = React.useState<PlanRow[]>([]);
@@ -456,7 +460,7 @@ export function QuoteForm() {
         const [
           { data: provs, error: provErr },
           { data: pls, error: planErr },
-          { data: latestMonthRaw, error: monthErr },
+          { data: monthRows, error: monthErr },
           { data: activeSettingRaw, error: settingErr },
         ] = await Promise.all([
           supabase.from("providers").select("id,name,slug").order("name"),
@@ -464,8 +468,7 @@ export function QuoteForm() {
           supabase
             .from("prices")
             .select("effective_month")
-            .order("effective_month", { ascending: false })
-            .limit(1),
+            .order("effective_month", { ascending: false }),
           supabase
             .from("app_settings")
             .select("value_text")
@@ -489,13 +492,18 @@ export function QuoteForm() {
         setProviders(provList);
         setPlans(planList);
 
-        const latestMonth = String((latestMonthRaw?.[0] as { effective_month?: unknown } | undefined)?.effective_month ?? "");
-        const activeMonth = String((activeSettingRaw as { value_text?: unknown } | null)?.value_text ?? "");
-        if (/^\d{4}-\d{2}-\d{2}$/.test(activeMonth)) {
-          setEffectiveMonth(activeMonth);
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(latestMonth)) {
-          setEffectiveMonth(latestMonth);
-        }
+        const availableMonths = distinctMonthsDesc(
+          (monthRows ?? []) as { effective_month?: string | null }[],
+        );
+        const activeSetting = String(
+          (activeSettingRaw as { value_text?: unknown } | null)?.value_text ?? "",
+        );
+        setEffectiveMonth(
+          resolveEffectiveMonth({
+            activeSetting: activeSetting || null,
+            availableMonthsISO: availableMonths,
+          }),
+        );
 
         const initialProviderId = provList[0]?.id ?? "";
         setSelectedProviderId(initialProviderId);
@@ -517,6 +525,7 @@ export function QuoteForm() {
     let alive = true;
     async function loadPrices() {
       setPricesByPlan({});
+      if (!effectiveMonth) return;
       if (planIdsForPrices.length === 0) { setLoadingPrices(false); return; }
       if (!supabase) return;
       setLoadingPrices(true);
@@ -633,7 +642,7 @@ export function QuoteForm() {
           result: r.result,
           error: r.error,
         })),
-        effectiveMonthISO: effectiveMonth,
+        effectiveMonthISO: effectiveMonth ?? monthStartISO(),
         scopeLabel: compareAllProviders ? "Todos los prestadores" : (selectedProvider?.name ?? "—"),
         particular: fv.isParticular,
         lastInputs,
@@ -1039,7 +1048,7 @@ export function QuoteForm() {
                     className="rounded-full px-3 py-0.5 text-xs font-medium text-foreground"
                     style={{ boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.10)" }}
                   >
-                    {effectiveMonth.slice(0, 7)}
+                    {effectiveMonth ? effectiveMonth.slice(0, 7) : "…"}
                   </span>
                 </div>
               </div>

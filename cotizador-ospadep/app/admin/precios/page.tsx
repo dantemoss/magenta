@@ -6,11 +6,27 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
 import { monthInputToMonthStartISO, nextMonthInput } from "@/lib/month";
 import type { PriceRow } from "@/lib/engine/strategies";
+import {
+  buildBatchNotes,
+  buildProviderPctMap,
+  collectActiveProviderRules,
+  collectPlanOverrideRules,
+  initProviderPcts,
+  parsePctText,
+  validateBatchRules,
+  type PlanOverrideInput,
+} from "@/lib/prices/batch-update";
+import {
+  distinctMonthsDesc,
+  isActiveSettingStale,
+  monthYYYYMM,
+  normalizeMonthISO,
+  resolveEffectiveMonth,
+} from "@/lib/prices/effective-month";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { HexagonPattern } from "@/components/ui/hexagon-pattern";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -45,6 +61,15 @@ type PreviewRow = {
   pct: number;
   scope: string;
   total_rows: number;
+};
+
+type ProviderPreviewRow = {
+  provider_id: string;
+  provider_name: string;
+  pct: number;
+  scope: string;
+  rows_changed: number;
+  rows_total: number;
 };
 
 type ApplyBatchResult = { status?: string; [k: string]: unknown } | null;
@@ -126,15 +151,25 @@ export default function AdminPricesPage() {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     return nextMonthInput(`${y}-${m}`);
   });
+
+  function handleSourceMonthChange(value: string) {
+    setSourceMonth(value);
+    setTargetMonth(nextMonthInput(value));
+  }
   const [pricesMonthFilter, setPricesMonthFilter] = React.useState<string>(targetMonth);
-  const [pct, setPct] = React.useState<string>("0");
   const [scope, setScope] = React.useState<"both" | "particular" | "no_particular">(
     "both",
   );
-  const [providerId, setProviderId] = React.useState<string>("all");
-  const [planId, setPlanId] = React.useState<string>("all");
+  const [providerPcts, setProviderPcts] = React.useState<Record<string, string>>({});
+  const [planOverrides, setPlanOverrides] = React.useState<Record<string, string>>({});
+  const [advancedPlanId, setAdvancedPlanId] = React.useState<string>("");
+  const [advancedPlanPct, setAdvancedPlanPct] = React.useState<string>("");
+  const [activateVigenciaOnApply, setActivateVigenciaOnApply] = React.useState(true);
 
   const [preview, setPreview] = React.useState<PreviewRow[] | null>(null);
+  const [providerPreview, setProviderPreview] = React.useState<ProviderPreviewRow[] | null>(
+    null,
+  );
   const [lastBatchId, setLastBatchId] = React.useState<string | null>(null);
   const [activeMonth, setActiveMonth] = React.useState<string>("");
   const [savingActiveMonth, setSavingActiveMonth] = React.useState(false);
@@ -191,14 +226,47 @@ export default function AdminPricesPage() {
         }
         if (!alive) return;
         const pricesRows = (prs ?? []) as PriceRow[];
-        setProviders((provs ?? []) as ProviderRow[]);
+        const provRows = (provs ?? []) as ProviderRow[];
+        setProviders(provRows);
+        setProviderPcts((cur) => {
+          const next = { ...cur };
+          for (const p of provRows) {
+            if (next[p.id] === undefined) next[p.id] = "";
+          }
+          return next;
+        });
         setPlans((pls ?? []) as PlanRow[]);
         setPrices(pricesRows);
         setBatches((bts ?? []) as BatchRow[]);
-        const settingMonth = ((st as AppSettingRow | null)?.value_text ?? "").slice(0, 7);
-        const available = [...new Set(pricesRows.map((r) => (r.effective_month ?? "").slice(0, 7)).filter(Boolean))]
-          .sort((a, b) => b.localeCompare(a));
-        setActiveMonth(available.includes(settingMonth) ? settingMonth : (available[0] ?? ""));
+        const availableISO = distinctMonthsDesc(pricesRows);
+        const available = availableISO.map(monthYYYYMM);
+        const settingISO = normalizeMonthISO((st as AppSettingRow | null)?.value_text);
+        const resolvedISO = resolveEffectiveMonth({
+          activeSetting: settingISO,
+          availableMonthsISO: availableISO,
+        });
+        const resolvedMonth = monthYYYYMM(resolvedISO);
+        setActiveMonth(resolvedMonth);
+        if (
+          supabase &&
+          isActiveSettingStale(settingISO, availableISO) &&
+          availableISO.length > 0
+        ) {
+          await supabase.from("app_settings").upsert(
+            {
+              key: "active_effective_month",
+              value_text: resolvedISO,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "key" },
+          );
+        }
+        if (available.length > 0) {
+          const latest = available[0]!;
+          setSourceMonth(latest);
+          setTargetMonth(nextMonthInput(latest));
+          setPricesMonthFilter((cur) => (cur === "all" || available.includes(cur) ? cur : latest));
+        }
       } catch (e) {
         if (!alive) return;
         setError(getErrorMessage(e, "Error cargando datos"));
@@ -235,8 +303,7 @@ export default function AdminPricesPage() {
   }, [prices, pricesMonthFilter, filter, planById, providerById]);
 
   const availablePriceMonths = React.useMemo(() => {
-    return [...new Set(prices.map((r) => (r.effective_month ?? "").slice(0, 7)).filter(Boolean))]
-      .sort((a, b) => b.localeCompare(a));
+    return distinctMonthsDesc(prices).map(monthYYYYMM);
   }, [prices]);
 
   const duplicatedRowsInSameMonth = React.useMemo(() => {
@@ -259,60 +326,115 @@ export default function AdminPricesPage() {
     return duplicates;
   }, [prices]);
 
-  const plansForSelectedProvider = React.useMemo(() => {
-    if (providerId === "all") return plans;
-    return plans.filter((p) => p.provider_id === providerId);
-  }, [plans, providerId]);
+  const planOverrideRows = React.useMemo((): PlanOverrideInput[] => {
+    return Object.entries(planOverrides)
+      .map(([planId, pctText]) => {
+        const pl = planById.get(planId);
+        if (!pl) return null;
+        const prov = providerById.get(pl.provider_id);
+        return {
+          planId,
+          planName: pl.name,
+          providerName: prov?.name ?? "Prestador",
+          pctText,
+        };
+      })
+      .filter((x): x is PlanOverrideInput => x != null);
+  }, [planOverrides, planById, providerById]);
+
+  function setProviderPct(providerId: string, value: string) {
+    setProviderPcts((cur) => ({ ...cur, [providerId]: value }));
+  }
+
+  function addPlanOverride() {
+    if (!advancedPlanId) {
+      setError("Elegí un plan para el ajuste avanzado.");
+      return;
+    }
+    const pct = parsePctText(advancedPlanPct);
+    if (pct == null || pct === 0) {
+      setError("El % del plan debe ser distinto de 0.");
+      return;
+    }
+    setError(null);
+    setPlanOverrides((cur) => ({ ...cur, [advancedPlanId]: advancedPlanPct }));
+    setAdvancedPlanPct("");
+  }
+
+  function removePlanOverride(planId: string) {
+    setPlanOverrides((cur) => {
+      const next = { ...cur };
+      delete next[planId];
+      return next;
+    });
+  }
 
   async function createBatchAndPreview() {
     setError(null);
     if (!supabase) return;
     setSaving(true);
     try {
-      const pctNum = Number(pct);
-      if (!Number.isFinite(pctNum)) throw new Error("Porcentaje inválido");
-      if (pctNum === 0) throw new Error("El % no puede ser 0");
-
       const source = monthInputToMonthStartISO(sourceMonth);
       const target = monthInputToMonthStartISO(targetMonth);
+
+      const providerInputs = buildProviderPctMap(providers, providerPcts);
+      for (const row of providerInputs) {
+        const raw = row.pctText.trim();
+        if (raw !== "" && parsePctText(raw) == null) {
+          throw new Error(`Porcentaje inválido para ${row.providerName}.`);
+        }
+      }
+      for (const row of planOverrideRows) {
+        const raw = row.pctText.trim();
+        if (raw !== "" && parsePctText(raw) == null) {
+          throw new Error(`Porcentaje inválido para el plan ${row.planName}.`);
+        }
+      }
 
       const { data: batch, error: batchErr } = await supabase
         .from("price_batches")
         .insert({
           source_month: source,
           target_month: target,
-          notes:
-            planId !== "all"
-              ? `Plan:${planId} pct:${pctNum} scope:${scope}`
-              : providerId !== "all"
-                ? `Provider:${providerId} pct:${pctNum} scope:${scope}`
-                : `Global pct:${pctNum} scope:${scope}`,
+          notes: "Pendiente de revisión",
         })
         .select("id,created_at,source_month,target_month,status,notes")
         .single();
       if (batchErr) throw batchErr;
       if (!batch) throw new Error("No se pudo crear el batch");
 
-      const rule = {
-        batch_id: batch.id,
-        provider_id: providerId === "all" ? null : providerId,
-        plan_id: planId === "all" ? null : planId,
-        pct: pctNum,
-        scope,
-      };
-      const { error: ruleErr } = await supabase.from("price_batch_rules").insert(rule);
+      const providerRules = collectActiveProviderRules(providerInputs, batch.id, scope);
+      const planRules = collectPlanOverrideRules(planOverrideRows, batch.id, scope);
+      const allRules = [...providerRules, ...planRules];
+      const validationError = validateBatchRules(allRules);
+      if (validationError) throw new Error(validationError);
+
+      const { error: ruleErr } = await supabase.from("price_batch_rules").insert(allRules);
       if (ruleErr) throw ruleErr;
 
-      const { data: prev, error: prevErr } = await supabase.rpc("preview_price_batch", {
-        batch: batch.id,
-        sample_limit: 30,
-      });
-      if (prevErr) throw prevErr;
+      const notes = buildBatchNotes(sourceMonth, targetMonth, providerRules, planRules);
+      await supabase.from("price_batches").update({ notes }).eq("id", batch.id);
 
-      setPreview((prev ?? []) as PreviewRow[]);
+      const [prevRes, provRes] = await Promise.all([
+        supabase.rpc("preview_price_batch", { batch: batch.id, sample_limit: 30 }),
+        supabase.rpc("preview_price_batch_by_provider", { batch: batch.id }),
+      ]);
+      if (prevRes.error) throw prevRes.error;
+      if (provRes.error) {
+        if ((provRes.error as { code?: string }).code === "PGRST202") {
+          throw new Error(
+            "Falta la función preview_price_batch_by_provider en Supabase. Ejecutá docs/fix-preview-price-batch-b-record-plan-id.sql",
+          );
+        }
+        throw provRes.error;
+      }
+
+      setPreview((prevRes.data ?? []) as PreviewRow[]);
+      setProviderPreview((provRes.data ?? []) as ProviderPreviewRow[]);
       setLastBatchId(batch.id);
 
-      setBatches((cur) => [batch as BatchRow, ...cur].slice(0, 10));
+      const batchWithNotes = { ...(batch as BatchRow), notes };
+      setBatches((cur) => [batchWithNotes, ...cur].slice(0, 10));
     } catch (e) {
       setError(getErrorMessage(e, "No se pudo preparar la actualización"));
     } finally {
@@ -357,8 +479,35 @@ export default function AdminPricesPage() {
       // limpiar preview solo si se aplicó
       const status = (data as ApplyBatchResult)?.status;
       if (status === "applied" || status === "already_applied") {
+        const pricesRows = (prs ?? []) as PriceRow[];
+        const availableISO = distinctMonthsDesc(pricesRows);
+        const appliedMonthISO = monthInputToMonthStartISO(targetMonth);
+        const resolvedISO = availableISO.includes(appliedMonthISO)
+          ? appliedMonthISO
+          : resolveEffectiveMonth({
+              activeSetting: activateVigenciaOnApply ? appliedMonthISO : null,
+              availableMonthsISO: availableISO,
+            });
+        if (activateVigenciaOnApply && /^\d{4}-\d{2}$/.test(targetMonth)) {
+          const { error: vigErr } = await supabase
+            .from("app_settings")
+            .upsert(
+              {
+                key: "active_effective_month",
+                value_text: resolvedISO,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "key" },
+            );
+          if (vigErr) throw vigErr;
+          setActiveMonth(monthYYYYMM(resolvedISO));
+        }
+        setPricesMonthFilter(monthYYYYMM(resolvedISO));
         setPreview(null);
+        setProviderPreview(null);
         setLastBatchId(null);
+        setProviderPcts(initProviderPcts(providers.map((p) => p.id)));
+        setPlanOverrides({});
       }
     } catch (e) {
       setError(getErrorMessage(e, "No se pudo aplicar la actualización"));
@@ -372,6 +521,10 @@ export default function AdminPricesPage() {
     if (!supabase) return;
     if (!activeMonth || !/^\d{4}-\d{2}$/.test(activeMonth)) {
       setError("Elegí un período válido para la vigencia activa.");
+      return;
+    }
+    if (!availablePriceMonths.includes(activeMonth)) {
+      setError("Ese mes no tiene precios cargados. Aplicá una actualización primero.");
       return;
     }
     setSavingActiveMonth(true);
@@ -457,7 +610,6 @@ export default function AdminPricesPage() {
 
   return (
     <main className="relative flex-1 overflow-hidden bg-muted px-4 py-8">
-      <HexagonPattern className="pointer-events-none absolute inset-0 text-primary/[0.12] [mask-image:radial-gradient(85%_60%_at_50%_15%,white,transparent)]" />
       <div className="mx-auto w-full max-w-7xl space-y-6">
         <section className="relative overflow-hidden rounded-2xl bg-card px-6 py-6 shadow-[0_0_0_1px_hsl(var(--primary)/0.07),0_12px_24px_-16px_rgba(0,0,0,0.14)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -469,7 +621,7 @@ export default function AdminPricesPage() {
                 Administración de precios
               </h1>
               <p className="text-sm text-muted-foreground">
-                Prepará un lote, revisá el impacto y aplicá solo cuando esté validado.
+                Definí % por prestador, revisá el resumen y aplicá una sola actualización mensual.
               </p>
             </div>
             <Badge variant="secondary" className="rounded-full px-3 py-1">
@@ -502,18 +654,17 @@ export default function AdminPricesPage() {
           <section className="space-y-6 xl:col-span-8">
             <Card className="rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Actualización rápida</CardTitle>
+                <CardTitle className="text-lg">Actualización mensual</CardTitle>
                 <CardDescription>
-                  Seleccioná período, alcance y porcentaje. Revisá y aplicá. Al aplicar, el mes destino
-                  queda completo: los planes sin regla de aumento copian la tarifa del mes base (o la que ya
-                  hubiera en destino si aplicás varios lotes al mismo mes).
+                  Definí la nueva vigencia y el % de cada prestador. Al aplicar, todos los planes quedan
+                  cargados en el mismo mes. Los prestadores sin % mantienen el precio del mes base.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground sm:grid-cols-3">
-                  <p><span className="font-semibold text-foreground">1.</span> Definí mes base y destino</p>
-                  <p><span className="font-semibold text-foreground">2.</span> Elegí alcance y porcentaje</p>
-                  <p><span className="font-semibold text-foreground">3.</span> Revisá y luego aplicá</p>
+                  <p><span className="font-semibold text-foreground">1.</span> Mes base y nueva vigencia</p>
+                  <p><span className="font-semibold text-foreground">2.</span> % por prestador</p>
+                  <p><span className="font-semibold text-foreground">3.</span> Revisá y aplicá una sola vez</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-2">
@@ -521,73 +672,20 @@ export default function AdminPricesPage() {
                     <Input
                       type="month"
                       value={sourceMonth}
-                      onChange={(e) => setSourceMonth(e.target.value)}
+                      onChange={(e) => handleSourceMonthChange(e.target.value)}
                       className="h-10 rounded-lg"
                     />
+                    <p className="text-xs text-muted-foreground">Vigencia de referencia con precios actuales.</p>
                   </div>
                   <div className="space-y-2">
-                    <Label>Mes destino</Label>
+                    <Label>Nueva vigencia</Label>
                     <Input
                       type="month"
                       value={targetMonth}
                       onChange={(e) => setTargetMonth(e.target.value)}
                       className="h-10 rounded-lg"
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Ajuste (%)</Label>
-                    <Input
-                      inputMode="decimal"
-                      value={pct}
-                      onChange={(e) => setPct(e.target.value)}
-                      placeholder="Ej: 7.5 o -3"
-                      className="h-10 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label>Prestador</Label>
-                    <Select
-                      value={providerId}
-                      onValueChange={(v) => {
-                        setProviderId(v);
-                        setPlanId("all");
-                      }}
-                    >
-                      <SelectTrigger className="h-10 rounded-lg">
-                        <SelectValue placeholder="Todos" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        {providers.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">Filtrá por una entidad específica si hace falta.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Plan (opcional)</Label>
-                    <Select value={planId} onValueChange={setPlanId}>
-                      <SelectTrigger className="h-10 rounded-lg">
-                        <SelectValue placeholder="Todos" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        {plansForSelectedProvider.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} ({p.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">Si elegís plan, actualiza solo esa combinación.</p>
+                    <p className="text-xs text-muted-foreground">Mes destino común para todos los prestadores.</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Modalidad</Label>
@@ -606,17 +704,121 @@ export default function AdminPricesPage() {
                         <SelectItem value="particular">Particular</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">Limitá por tipo de tarifario.</p>
+                    <p className="text-xs text-muted-foreground">Aplica a todos los aumentos de esta actualización.</p>
                   </div>
                 </div>
 
+                <Separator />
+
+                <div className="space-y-3">
+                  <Label>Ajuste por prestador (%)</Label>
+                  <div className="overflow-hidden rounded-xl border border-border bg-white">
+                    <div className="grid grid-cols-[1fr_140px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
+                      <div>Prestador</div>
+                      <div className="text-right">Aumento %</div>
+                    </div>
+                    <div className="max-h-[280px] overflow-y-auto">
+                      {providers.map((p) => (
+                        <div
+                          key={p.id}
+                          className="grid grid-cols-[1fr_140px] gap-2 border-b border-border px-3 py-2 last:border-b-0"
+                        >
+                          <div className="flex items-center text-sm font-medium">{p.name}</div>
+                          <Input
+                            inputMode="decimal"
+                            value={providerPcts[p.id] ?? ""}
+                            onChange={(e) => setProviderPct(p.id, e.target.value)}
+                            placeholder="0 = sin cambio"
+                            className="h-9 rounded-lg text-right tabular-nums"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Dejá vacío o en 0 los prestadores que solo deben copiar el precio del mes base.
+                  </p>
+                </div>
+
+                <details className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+                  <summary className="cursor-pointer text-sm font-medium text-foreground">
+                    Ajuste por plan (avanzado)
+                  </summary>
+                  <div className="mt-4 space-y-4">
+                    <p className="text-xs text-muted-foreground">
+                      Si un plan necesita un % distinto al del prestador, agregalo acá. Tiene prioridad sobre
+                      la regla del prestador.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto]">
+                      <Select value={advancedPlanId} onValueChange={setAdvancedPlanId}>
+                        <SelectTrigger className="h-10 rounded-lg">
+                          <SelectValue placeholder="Elegí un plan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {plans.map((pl) => {
+                            const prov = providerById.get(pl.provider_id);
+                            return (
+                              <SelectItem key={pl.id} value={pl.id}>
+                                {prov?.name ?? "Prestador"} · {pl.name} ({pl.type})
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        inputMode="decimal"
+                        value={advancedPlanPct}
+                        onChange={(e) => setAdvancedPlanPct(e.target.value)}
+                        placeholder="%"
+                        className="h-10 rounded-lg text-right tabular-nums"
+                      />
+                      <Button type="button" variant="outline" onClick={addPlanOverride}>
+                        Agregar
+                      </Button>
+                    </div>
+                    {planOverrideRows.length > 0 ? (
+                      <div className="space-y-2">
+                        {planOverrideRows.map((row) => (
+                          <div
+                            key={row.planId}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                          >
+                            <span>
+                              {row.providerName} · {row.planName} — {row.pctText}%
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() => removePlanOverride(row.planId)}
+                            >
+                              Quitar
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={activateVigenciaOnApply}
+                    onChange={(e) => setActivateVigenciaOnApply(e.target.checked)}
+                    className="size-4 rounded border-border"
+                  />
+                  Activar la nueva vigencia en el cotizador al aplicar
+                </label>
+
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button onClick={createBatchAndPreview} disabled={loading || saving} className="min-w-40">
+                  <Button onClick={() => void createBatchAndPreview()} disabled={loading || saving} className="min-w-40">
                     {saving ? "Calculando…" : "Revisar cambios"}
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={applyBatch}
+                    onClick={() => void applyBatch()}
                     disabled={loading || saving || !lastBatchId}
                     className="min-w-40"
                   >
@@ -629,19 +831,53 @@ export default function AdminPricesPage() {
               </CardContent>
             </Card>
 
+            {providerPreview && providerPreview.length > 0 ? (
+              <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">Resumen por prestador</CardTitle>
+                  <CardDescription>
+                    Vista rápida del impacto antes de aplicar. Total de filas en el mes destino:{" "}
+                    <span className="font-medium tabular-nums">
+                      {preview?.[0]?.total_rows ?? "—"}
+                    </span>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-hidden rounded-xl border border-border bg-white">
+                    <div className="grid grid-cols-[1fr_90px_110px_110px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
+                      <div>Prestador</div>
+                      <div className="text-right">%</div>
+                      <div className="text-right">Con cambio</div>
+                      <div className="text-right">Total filas</div>
+                    </div>
+                    {providerPreview.map((r) => (
+                      <div
+                        key={r.provider_id}
+                        className="grid grid-cols-[1fr_90px_110px_110px] gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0"
+                      >
+                        <div className="font-medium">{r.provider_name}</div>
+                        <div className="text-right tabular-nums">{r.pct}%</div>
+                        <div className="text-right tabular-nums">{r.rows_changed}</div>
+                        <div className="text-right tabular-nums">{r.rows_total}</div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
             {preview && preview.length > 0 ? (
               <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)]">
                 <CardHeader className="pb-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <CardTitle className="text-lg">Previsualización del batch</CardTitle>
+                      <CardTitle className="text-lg">Detalle de ejemplo</CardTitle>
                       <CardDescription>
-                        Filas que se escribirán en el mes destino (incluye carry-forward). Total:{" "}
+                        Muestra hasta 30 filas con mayor cambio de precio. Total a materializar:{" "}
                         <span className="font-medium tabular-nums">
                           {preview[0]?.total_rows ?? preview.length}
                         </span>
-                        . La tabla prioriza filas donde el precio cambia; el resto queda igual salvo
-                        materialización del mes.
+                        .
                       </CardDescription>
                     </div>
                     <Badge variant="secondary">Antes → Después</Badge>
