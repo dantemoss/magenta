@@ -23,7 +23,7 @@ import {
 } from "@/lib/engine/strategies";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { formatMoney, formatMoneyCompact } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { monthStartISO } from "@/lib/month";
 import {
   distinctMonthsDesc,
@@ -1436,7 +1436,7 @@ export function QuoteForm() {
                         className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground"
                         style={{ letterSpacing: "-0.96px" }}
                       >
-                        {bestTotal != null ? formatMoneyCompact(bestTotal) : "—"}
+                        {bestTotal != null ? formatMoney(bestTotal) : "—"}
                       </p>
                     </div>
                     <div className="rounded-lg p-4" style={{ boxShadow: shadowCard }}>
