@@ -55,8 +55,10 @@ export type ComparisonPdfInput = {
   bestPriceLabel: string;
   regularPriceLabel: string;
   disclaimer: string;
-  footerPhoneLine: string;
+  /** Líneas de contacto del pie (solo datos verificables) */
+  footerBrandLine: string;
   footerWebLine: string;
+  footerPhoneLine?: string;
 };
 
 /** Manual OSPADEP + acentos funcionales */
@@ -77,12 +79,19 @@ const COLOR_DANGER_BG = "#fdecec";
 
 const ACCENT_BY_INDEX = [COLOR_SLATE, COLOR_SLATE_MID, COLOR_SLATE_LIGHT] as const;
 
+/**
+ * Noto Sans incluye marcas combinantes (U+0301, U+0303). Poppins no:
+ * react-pdf descompone ó/ñ y sin esas marcas los acentos desaparecen en el PDF.
+ */
 const PDF_FONT_PATHS = {
-  poppinsRegular: "/fonts/Poppins-Regular.ttf",
-  poppinsBold: "/fonts/Poppins-Bold.ttf",
+  bodyRegular: "/fonts/NotoSans-Regular.ttf",
+  bodyBold: "/fonts/NotoSans-Bold.ttf",
   ralewayBold: "/fonts/Raleway-Bold.ttf",
   ralewayBlack: "/fonts/Raleway-Black.ttf",
 } as const;
+
+const FONT_BODY = "NotoSans";
+const FONT_DISPLAY = "Raleway";
 
 let pdfFontsReady: Promise<void> | null = null;
 
@@ -114,40 +123,63 @@ async function fetchFontBuffer(origin: string, path: string): Promise<ArrayBuffe
   return buffer;
 }
 
-/** react-pdf solo acepta URL o data URI en `src`, no ArrayBuffer/Uint8Array. */
+/** Base64 seguro por chunks (evita corrupción del TTF y pérdida de glifos latinos). */
 function fontBufferToDataUri(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
   }
   return `data:font/ttf;base64,${btoa(binary)}`;
 }
 
-/** Registra Poppins y Raleway en react-pdf (data URI tras validar el .ttf). */
+/**
+ * Registra fuentes con soporte latino completo (incl. marcas combinantes).
+ * Desactiva el hyphenation en inglés de react-pdf.
+ */
 export function ensureComparisonPdfFonts(origin: string): Promise<void> {
   if (!pdfFontsReady) {
     pdfFontsReady = (async () => {
-      const [poppinsRegular, poppinsBold, ralewayBold, ralewayBlack] =
+      Font.registerHyphenationCallback((word) => [word]);
+
+      const [bodyRegular, bodyBold, ralewayBold, ralewayBlack] =
         await Promise.all([
-          fetchFontBuffer(origin, PDF_FONT_PATHS.poppinsRegular),
-          fetchFontBuffer(origin, PDF_FONT_PATHS.poppinsBold),
+          fetchFontBuffer(origin, PDF_FONT_PATHS.bodyRegular),
+          fetchFontBuffer(origin, PDF_FONT_PATHS.bodyBold),
           fetchFontBuffer(origin, PDF_FONT_PATHS.ralewayBold),
           fetchFontBuffer(origin, PDF_FONT_PATHS.ralewayBlack),
         ]);
 
       Font.register({
-        family: "Poppins",
+        family: FONT_BODY,
         fonts: [
-          { src: fontBufferToDataUri(poppinsRegular), fontWeight: 400 },
-          { src: fontBufferToDataUri(poppinsBold), fontWeight: 700 },
+          {
+            src: fontBufferToDataUri(bodyRegular),
+            fontStyle: "normal",
+            fontWeight: 400,
+          },
+          {
+            src: fontBufferToDataUri(bodyBold),
+            fontStyle: "normal",
+            fontWeight: 700,
+          },
         ],
       });
       Font.register({
-        family: "Raleway",
+        family: FONT_DISPLAY,
         fonts: [
-          { src: fontBufferToDataUri(ralewayBold), fontWeight: 700 },
-          { src: fontBufferToDataUri(ralewayBlack), fontWeight: 900 },
+          {
+            src: fontBufferToDataUri(ralewayBold),
+            fontStyle: "normal",
+            fontWeight: 700,
+          },
+          {
+            src: fontBufferToDataUri(ralewayBlack),
+            fontStyle: "normal",
+            fontWeight: 900,
+          },
         ],
       });
     })();
@@ -161,7 +193,7 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
     paddingHorizontal: 32,
     fontSize: 9,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     fontWeight: 400,
     color: COLOR_TEXT,
     backgroundColor: COLOR_BG_PAGE,
@@ -194,14 +226,14 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: 7.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED,
     lineHeight: 1.45,
     maxWidth: 220,
   },
   brandFallback: {
     fontSize: 16,
-    fontFamily: "Raleway",
+    fontFamily: FONT_DISPLAY,
     fontWeight: 900,
     color: COLOR_PRIMARY,
     marginBottom: 6,
@@ -212,7 +244,7 @@ const styles = StyleSheet.create({
   },
   documentLabel: {
     fontSize: 22,
-    fontFamily: "Raleway",
+    fontFamily: FONT_DISPLAY,
     fontWeight: 900,
     color: COLOR_PRIMARY,
     letterSpacing: 1.2,
@@ -225,7 +257,7 @@ const styles = StyleSheet.create({
   },
   metaKey: {
     fontSize: 7.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED_SOFT,
     width: 92,
     textAlign: "right",
@@ -233,7 +265,7 @@ const styles = StyleSheet.create({
   },
   metaVal: {
     fontSize: 8.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: COLOR_TEXT,
     width: 120,
@@ -248,7 +280,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 15,
-    fontFamily: "Raleway",
+    fontFamily: FONT_DISPLAY,
     fontWeight: 900,
     color: COLOR_PRIMARY,
     lineHeight: 1.25,
@@ -256,7 +288,7 @@ const styles = StyleSheet.create({
   },
   heroSubtitle: {
     fontSize: 9.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED,
     lineHeight: 1.45,
   },
@@ -279,7 +311,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 6.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: COLOR_SLATE,
     textTransform: "uppercase",
@@ -288,14 +320,14 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     fontSize: 8,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     color: COLOR_TEXT,
     lineHeight: 1.35,
   },
 
   sectionEyebrow: {
     fontSize: 7.5,
-    fontFamily: "Raleway",
+    fontFamily: FONT_DISPLAY,
     fontWeight: 700,
     color: COLOR_SLATE_MID,
     textTransform: "uppercase",
@@ -303,25 +335,30 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginHorizontal: -6,
+  /** Contenedor de opciones: sin márgenes negativos (evita desborde en A4). */
+  plansBlock: {
+    width: "100%",
   },
-
+  cardGrid: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    justifyContent: "space-between",
+    width: "100%",
+  },
   cardWrap: {
-    paddingHorizontal: 6,
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   card: {
     backgroundColor: COLOR_BG_CARD,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLOR_BORDER,
-    padding: 14,
-    minHeight: 300,
+    padding: 12,
     flexDirection: "column",
+  },
+  cardCompact: {
+    padding: 10,
   },
   cardBest: {
     borderWidth: 2,
@@ -329,82 +366,96 @@ const styles = StyleSheet.create({
   },
 
   badgeBest: {
-    alignSelf: "center",
+    alignSelf: "flex-start",
     backgroundColor: COLOR_SLATE,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginBottom: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginBottom: 8,
   },
   badgeBestText: {
-    fontSize: 7,
-    fontFamily: "Poppins",
+    fontSize: 6.5,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: "#ffffff",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   iconBox: {
-    width: 48,
-    height: 48,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginRight: 8,
+  },
+  iconBoxCompact: {
+    width: 30,
+    height: 30,
+    marginRight: 6,
   },
   iconBoxLogo: {
-    width: 46,
-    height: 46,
+    width: 34,
+    height: 34,
+    objectFit: "contain",
+  },
+  iconBoxLogoCompact: {
+    width: 28,
+    height: 28,
     objectFit: "contain",
   },
   iconBoxFallback: {
-    fontSize: 11,
-    fontFamily: "Raleway",
+    fontSize: 10,
+    fontFamily: FONT_DISPLAY,
     fontWeight: 900,
+  },
+  cardHeaderText: {
+    flex: 1,
+    minWidth: 0,
   },
   planTypeUpper: {
-    fontSize: 8,
-    fontFamily: "Raleway",
+    fontSize: 7,
+    fontFamily: FONT_DISPLAY,
     fontWeight: 900,
-    letterSpacing: 0.8,
-    marginBottom: 2,
+    letterSpacing: 0.6,
+    marginBottom: 1,
   },
   planName: {
-    fontSize: 11,
-    fontFamily: "Raleway",
+    fontSize: 10,
+    fontFamily: FONT_DISPLAY,
     fontWeight: 700,
     color: COLOR_TEXT,
-    marginBottom: 6,
-    lineHeight: 1.3,
+    lineHeight: 1.25,
   },
-  providerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-    minHeight: 14,
+  planNameCompact: {
+    fontSize: 9,
   },
   providerName: {
-    fontSize: 8,
-    fontFamily: "Poppins",
+    fontSize: 7.5,
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED,
-    flex: 1,
+    marginTop: 2,
   },
 
   featuresList: {
     flexDirection: "column",
-    flexGrow: 1,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   featureRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 5,
+    marginBottom: 3,
   },
-  featureIconBox: { width: 12, marginRight: 6, marginTop: 0.5 },
+  featureIconBox: { width: 10, marginRight: 4, marginTop: 1 },
   featureText: {
-    fontSize: 7.8,
-    fontFamily: "Poppins",
+    fontSize: 7.2,
+    fontFamily: FONT_BODY,
     color: COLOR_TEXT,
-    lineHeight: 1.4,
+    lineHeight: 1.35,
     flex: 1,
   },
   featureTextMuted: { color: COLOR_MUTED },
@@ -412,84 +463,164 @@ const styles = StyleSheet.create({
   priceSection: {
     borderTopWidth: 1,
     borderTopColor: COLOR_BORDER,
-    paddingTop: 10,
+    paddingTop: 8,
     marginTop: "auto",
   },
   priceLabel: {
-    fontSize: 7,
-    fontFamily: "Poppins",
+    fontSize: 6.5,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
-    letterSpacing: 0.6,
-    marginBottom: 4,
+    letterSpacing: 0.5,
+    marginBottom: 3,
   },
   priceRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginBottom: 10,
+    marginBottom: 6,
+    flexWrap: "wrap",
   },
   priceAmount: {
-    fontSize: 21,
-    fontFamily: "Poppins",
+    fontSize: 16,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
+  },
+  priceAmountCompact: {
+    fontSize: 14,
   },
   priceSuffix: {
-    fontSize: 9,
-    fontFamily: "Poppins",
+    fontSize: 8,
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED,
-    marginLeft: 4,
+    marginLeft: 3,
   },
   priceStruck: {
-    fontSize: 13,
-    fontFamily: "Poppins",
+    fontSize: 10,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: COLOR_MUTED_SOFT,
     textDecoration: "line-through",
-    letterSpacing: -0.3,
-    marginBottom: 3,
+    letterSpacing: -0.2,
+    marginBottom: 2,
   },
   contributionNote: {
-    fontSize: 7.5,
-    fontFamily: "Poppins",
+    fontSize: 6.5,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: COLOR_TEXT,
-    marginTop: 4,
+    marginTop: 2,
+    marginBottom: 4,
   },
 
   ctaSolid: {
-    borderRadius: 10,
-    paddingVertical: 8,
+    borderRadius: 8,
+    paddingVertical: 6,
     alignItems: "center",
   },
   ctaSolidText: {
-    fontSize: 8,
-    fontFamily: "Poppins",
+    fontSize: 7,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: "#ffffff",
   },
   ctaOutline: {
-    borderRadius: 10,
-    borderWidth: 1.5,
-    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.2,
+    paddingVertical: 6,
     alignItems: "center",
     backgroundColor: "#ffffff",
   },
   ctaOutlineText: {
-    fontSize: 8,
-    fontFamily: "Poppins",
+    fontSize: 7,
+    fontFamily: FONT_BODY,
     fontWeight: 700,
   },
 
   errBox: {
-    marginTop: 8,
-    padding: 8,
+    marginTop: 4,
+    padding: 6,
     backgroundColor: COLOR_DANGER_BG,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   errText: {
-    fontSize: 7,
-    fontFamily: "Poppins",
+    fontSize: 6.5,
+    fontFamily: FONT_BODY,
     color: COLOR_DANGER,
+    lineHeight: 1.3,
+  },
+
+  /** Filas para 4+ planes: legibles a ancho completo, sin apretar columnas. */
+  listStack: {
+    width: "100%",
+  },
+  listRow: {
+    width: "100%",
+    backgroundColor: COLOR_BG_CARD,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  listRowBest: {
+    borderWidth: 2,
+    borderColor: COLOR_SLATE_MID,
+  },
+  listLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    paddingRight: 10,
+    minWidth: 0,
+  },
+  listMid: {
+    flex: 1.2,
+    paddingRight: 10,
+    minWidth: 0,
+  },
+  listRight: {
+    alignItems: "flex-end",
+    width: 118,
+  },
+  listBadge: {
+    backgroundColor: COLOR_SLATE,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  listBadgeText: {
+    fontSize: 6,
+    fontFamily: FONT_BODY,
+    fontWeight: 700,
+    color: "#ffffff",
+  },
+  listPrice: {
+    fontSize: 13,
+    fontFamily: FONT_BODY,
+    fontWeight: 700,
+    color: COLOR_TEXT,
+  },
+  listPriceStruck: {
+    fontSize: 8,
+    fontFamily: FONT_BODY,
+    fontWeight: 700,
+    color: COLOR_MUTED_SOFT,
+    textDecoration: "line-through",
+    marginBottom: 1,
+  },
+  listPriceSuffix: {
+    fontSize: 7,
+    fontFamily: FONT_BODY,
+    color: COLOR_MUTED,
+  },
+  listFeatureLine: {
+    fontSize: 6.8,
+    fontFamily: FONT_BODY,
+    color: COLOR_MUTED,
     lineHeight: 1.35,
   },
 
@@ -502,16 +633,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLOR_BORDER,
     paddingHorizontal: 32,
-    paddingTop: 12,
-    paddingBottom: 14,
+    paddingTop: 10,
+    paddingBottom: 18,
+  },
+  footerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    marginBottom: 8,
   },
   footerLeft: {
     flexDirection: "row",
-    width: "62%",
-    paddingRight: 12,
+    width: "64%",
+    paddingRight: 14,
   },
   footerInfoIcon: {
     width: 16,
@@ -525,48 +659,82 @@ const styles = StyleSheet.create({
   },
   footerInfoIconText: {
     fontSize: 9,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
     fontWeight: 700,
     color: "#ffffff",
   },
   footerDisclaimer: {
-    fontSize: 7,
-    fontFamily: "Poppins",
+    fontSize: 6.8,
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED,
     lineHeight: 1.45,
     flex: 1,
   },
   footerRight: {
     alignItems: "flex-end",
-    maxWidth: "36%",
+    maxWidth: "34%",
   },
-  footerContactLine: {
-    fontSize: 8,
-    fontFamily: "Poppins",
-    fontWeight: 700,
-    color: COLOR_TEXT,
+  footerBrand: {
+    fontSize: 8.5,
+    fontFamily: FONT_DISPLAY,
+    fontWeight: 900,
+    color: COLOR_PRIMARY,
     marginBottom: 3,
     textAlign: "right",
   },
-  footerContactMuted: {
+  footerContactLine: {
     fontSize: 7.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
+    fontWeight: 700,
+    color: COLOR_TEXT,
+    marginBottom: 2,
+    textAlign: "right",
+  },
+  footerContactMuted: {
+    fontSize: 7,
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED,
     textAlign: "right",
   },
-  pageNumber: {
-    position: "absolute",
-    bottom: 8,
-    right: 32,
+  footerMeta: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: COLOR_BORDER,
+    paddingTop: 6,
+  },
+  footerRef: {
     fontSize: 6.5,
-    fontFamily: "Poppins",
+    fontFamily: FONT_BODY,
+    color: COLOR_MUTED_SOFT,
+  },
+  pageNumber: {
+    fontSize: 6.5,
+    fontFamily: FONT_BODY,
     color: COLOR_MUTED_SOFT,
   },
 });
 
-function CheckCircleIcon({ fill }: { fill: string }) {
+type PlanLayoutMode = "single" | "duo" | "trio" | "list";
+
+function resolvePlanLayout(count: number): PlanLayoutMode {
+  if (count <= 1) return "single";
+  if (count === 2) return "duo";
+  if (count === 3) return "trio";
+  return "list";
+}
+
+/** Anchos seguros dentro del área útil A4 (sin padding negativo). */
+function cardWidthForLayout(mode: PlanLayoutMode): string {
+  if (mode === "single") return "100%";
+  if (mode === "duo") return "48.5%";
+  return "31.8%";
+}
+
+function CheckCircleIcon({ fill, size = 9 }: { fill: string; size?: number }) {
   return (
-    <Svg width={11} height={11} viewBox="0 0 24 24">
+    <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
         d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"
         fill={fill}
@@ -587,10 +755,12 @@ function ProviderLogoBox({
   logoSrc,
   providerName,
   accent,
+  compact = false,
 }: {
   logoSrc?: string;
   providerName: string;
   accent: string;
+  compact?: boolean;
 }) {
   const cleaned = providerName.replace(/[^a-záéíóúñA-ZÁÉÍÓÚÑ0-9]/g, "");
   const initials =
@@ -601,9 +771,12 @@ function ProviderLogoBox({
         : "?";
 
   return (
-    <View style={styles.iconBox}>
+    <View style={[styles.iconBox, ...(compact ? [styles.iconBoxCompact] : [])]}>
       {logoSrc ? (
-        <Image src={logoSrc} style={styles.iconBoxLogo} />
+        <Image
+          src={logoSrc}
+          style={compact ? styles.iconBoxLogoCompact : styles.iconBoxLogo}
+        />
       ) : (
         <Text style={[styles.iconBoxFallback, { color: accent }]}>{initials}</Text>
       )}
@@ -614,52 +787,62 @@ function ProviderLogoBox({
 function PlanCard({
   row,
   accent,
-  colPct,
+  widthPct,
+  compact,
   bestPriceLabel,
   regularPriceLabel,
 }: {
   row: ComparisonPdfRowInput;
   accent: string;
-  colPct: number;
+  widthPct: string;
+  compact: boolean;
   bestPriceLabel: string;
   regularPriceLabel: string;
 }) {
   const hasError = Boolean(row.errorNote);
   const isBest = row.isBest && !hasError;
+  const features = row.features.slice(0, compact ? 3 : 4);
 
   return (
-    <View style={[styles.cardWrap, { width: `${colPct}%` }]} wrap={false}>
+    <View style={[styles.cardWrap, { width: widthPct }]} wrap={false}>
       <View
-        style={[styles.card, ...(isBest ? [styles.cardBest] : [])]}
+        style={[
+          styles.card,
+          ...(compact ? [styles.cardCompact] : []),
+          ...(isBest ? [styles.cardBest] : []),
+        ]}
       >
         {isBest ? (
           <View style={styles.badgeBest}>
             <Text style={styles.badgeBestText}>{bestPriceLabel}</Text>
           </View>
         ) : (
-          <View style={{ height: 22, marginBottom: 4 }} />
+          <View style={{ height: 16, marginBottom: 2 }} />
         )}
 
-        <ProviderLogoBox
-          logoSrc={row.logoSrc}
-          providerName={row.providerName}
-          accent={accent}
-        />
-
-        <Text style={[styles.planTypeUpper, { color: accent }]}>
-          {(row.planType || "Plan").toUpperCase()}
-        </Text>
-        <Text style={styles.planName}>{row.planName}</Text>
-
-        <View style={styles.providerRow}>
-          <Text style={styles.providerName}>{row.providerName}</Text>
+        <View style={styles.cardHeader}>
+          <ProviderLogoBox
+            logoSrc={row.logoSrc}
+            providerName={row.providerName}
+            accent={accent}
+            compact={compact}
+          />
+          <View style={styles.cardHeaderText}>
+            <Text style={[styles.planTypeUpper, { color: accent }]}>
+              {(row.planType || "Plan").toUpperCase()}
+            </Text>
+            <Text style={[styles.planName, ...(compact ? [styles.planNameCompact] : [])]}>
+              {row.planName}
+            </Text>
+            <Text style={styles.providerName}>{row.providerName}</Text>
+          </View>
         </View>
 
         <View style={styles.featuresList}>
-          {row.features.map((f, i) => (
+          {features.map((f, i) => (
             <View key={i} style={styles.featureRow}>
               <View style={styles.featureIconBox}>
-                <CheckCircleIcon fill={accent} />
+                <CheckCircleIcon fill={accent} size={compact ? 8 : 9} />
               </View>
               <Text
                 style={[
@@ -678,19 +861,31 @@ function PlanCard({
           {!hasError &&
           row.hasContributionDiscount &&
           row.strikeThroughPrice ? (
-            <View style={{ marginBottom: 6 }}>
+            <View>
               <Text style={styles.priceStruck}>{row.strikeThroughPrice}</Text>
               <View style={styles.priceRow}>
-                <Text style={[styles.priceAmount, { color: COLOR_TEXT }]}>
+                <Text
+                  style={[
+                    styles.priceAmount,
+                    ...(compact ? [styles.priceAmountCompact] : []),
+                    { color: COLOR_TEXT },
+                  ]}
+                >
                   {row.finalText}
                 </Text>
                 <Text style={styles.priceSuffix}>/mes</Text>
               </View>
-              <Text style={styles.contributionNote}>¡descontado por aportes!</Text>
+              <Text style={styles.contributionNote}>Cuota con descuento por aportes</Text>
             </View>
           ) : (
             <View style={styles.priceRow}>
-              <Text style={[styles.priceAmount, { color: COLOR_TEXT }]}>
+              <Text
+                style={[
+                  styles.priceAmount,
+                  ...(compact ? [styles.priceAmountCompact] : []),
+                  { color: COLOR_TEXT },
+                ]}
+              >
                 {row.finalText}
               </Text>
               {!hasError ? <Text style={styles.priceSuffix}>/mes</Text> : null}
@@ -703,7 +898,7 @@ function PlanCard({
             </View>
           ) : isBest ? (
             <View style={[styles.ctaSolid, { backgroundColor: COLOR_SLATE }]}>
-              <Text style={styles.ctaSolidText}>Mejor opción económica</Text>
+              <Text style={styles.ctaSolidText}>Opción más conveniente</Text>
             </View>
           ) : (
             <View style={[styles.ctaOutline, { borderColor: COLOR_SLATE_MID }]}>
@@ -718,17 +913,133 @@ function PlanCard({
   );
 }
 
-export function ComparisonPdfDocument(props: ComparisonPdfInput) {
-  const rowCount = props.rows.length;
-  const colWeight =
-    rowCount <= 1 ? 100 : rowCount === 2 ? 50 : rowCount === 3 ? 33.333 : 25;
+function PlanListRow({
+  row,
+  accent,
+  bestPriceLabel,
+}: {
+  row: ComparisonPdfRowInput;
+  accent: string;
+  bestPriceLabel: string;
+}) {
+  const hasError = Boolean(row.errorNote);
+  const isBest = row.isBest && !hasError;
+  const featureLine = row.features
+    .slice(0, 3)
+    .map((f) => f.label)
+    .join(" · ");
 
+  return (
+    <View
+      style={[styles.listRow, ...(isBest ? [styles.listRowBest] : [])]}
+      wrap={false}
+    >
+      <View style={styles.listLeft}>
+        <ProviderLogoBox
+          logoSrc={row.logoSrc}
+          providerName={row.providerName}
+          accent={accent}
+          compact
+        />
+        <View style={styles.cardHeaderText}>
+          <Text style={[styles.planTypeUpper, { color: accent }]}>
+            {(row.planType || "Plan").toUpperCase()}
+          </Text>
+          <Text style={[styles.planName, styles.planNameCompact]}>{row.planName}</Text>
+          <Text style={styles.providerName}>{row.providerName}</Text>
+        </View>
+      </View>
+
+      <View style={styles.listMid}>
+        {hasError ? (
+          <Text style={styles.errText}>{row.errorNote}</Text>
+        ) : (
+          <Text style={styles.listFeatureLine}>{featureLine}</Text>
+        )}
+      </View>
+
+      <View style={styles.listRight}>
+        {isBest ? (
+          <View style={styles.listBadge}>
+            <Text style={styles.listBadgeText}>{bestPriceLabel}</Text>
+          </View>
+        ) : null}
+        {!hasError && row.hasContributionDiscount && row.strikeThroughPrice ? (
+          <Text style={styles.listPriceStruck}>{row.strikeThroughPrice}</Text>
+        ) : null}
+        <Text style={styles.listPrice}>{row.finalText}</Text>
+        {!hasError ? <Text style={styles.listPriceSuffix}>por mes</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function PlansSection({
+  rows,
+  bestPriceLabel,
+  regularPriceLabel,
+}: {
+  rows: ComparisonPdfRowInput[];
+  bestPriceLabel: string;
+  regularPriceLabel: string;
+}) {
+  const layout = resolvePlanLayout(rows.length);
+  const widthPct = cardWidthForLayout(layout);
+  const compact = layout === "trio";
+
+  if (layout === "list") {
+    return (
+      <View style={styles.listStack}>
+        {rows.map((row, i) => {
+          const accent =
+            row.isBest && !row.errorNote
+              ? COLOR_SLATE
+              : ACCENT_BY_INDEX[i % ACCENT_BY_INDEX.length];
+          return (
+            <PlanListRow
+              key={i}
+              row={row}
+              accent={accent}
+              bestPriceLabel={bestPriceLabel}
+            />
+          );
+        })}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.cardGrid}>
+      {rows.map((row, i) => {
+        const accent =
+          row.isBest && !row.errorNote
+            ? COLOR_SLATE
+            : ACCENT_BY_INDEX[i % ACCENT_BY_INDEX.length];
+        return (
+          <PlanCard
+            key={i}
+            row={row}
+            accent={accent}
+            widthPct={widthPct}
+            compact={compact}
+            bestPriceLabel={bestPriceLabel}
+            regularPriceLabel={regularPriceLabel}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+export function ComparisonPdfDocument(props: ComparisonPdfInput) {
   return (
     <Document
       title={props.title}
       author="OSPADEP"
-      creator="Cotizador OSPADEP"
-      producer="Cotizador OSPADEP"
+      subject={`Cotización ${props.quoteRef}`}
+      creator="OSPADEP"
+      producer="OSPADEP"
+      keywords={props.quoteRef}
     >
       <Page size="A4" style={styles.page}>
         <View style={styles.topBar} fixed />
@@ -745,7 +1056,7 @@ export function ComparisonPdfDocument(props: ComparisonPdfInput) {
           <View style={styles.docCol}>
             <Text style={styles.documentLabel}>{props.documentLabel}</Text>
             <View style={styles.metaRow}>
-              <Text style={styles.metaKey}>Cotización Nº</Text>
+              <Text style={styles.metaKey}>Cotización N°</Text>
               <Text style={styles.metaVal}>{props.quoteRef}</Text>
             </View>
             <View style={styles.metaRow}>
@@ -773,46 +1084,41 @@ export function ComparisonPdfDocument(props: ComparisonPdfInput) {
           ))}
         </View>
 
-        <Text style={styles.sectionEyebrow}>Planes cotizados</Text>
-        <View style={styles.grid}>
-          {props.rows.map((row, i) => {
-            const accent =
-              row.isBest && !row.errorNote
-                ? COLOR_SLATE
-                : ACCENT_BY_INDEX[i % ACCENT_BY_INDEX.length];
-            return (
-              <PlanCard
-                key={i}
-                row={row}
-                accent={accent}
-                colPct={colWeight}
-                bestPriceLabel={props.bestPriceLabel}
-                regularPriceLabel={props.regularPriceLabel}
-              />
-            );
-          })}
+        <Text style={styles.sectionEyebrow}>Opciones de cobertura</Text>
+        <View style={styles.plansBlock}>
+          <PlansSection
+            rows={props.rows}
+            bestPriceLabel={props.bestPriceLabel}
+            regularPriceLabel={props.regularPriceLabel}
+          />
         </View>
 
         <View style={styles.footerBar} fixed>
-          <View style={styles.footerLeft}>
-            <View style={styles.footerInfoIcon}>
-              <Text style={styles.footerInfoIconText}>i</Text>
+          <View style={styles.footerTop}>
+            <View style={styles.footerLeft}>
+              <View style={styles.footerInfoIcon}>
+                <Text style={styles.footerInfoIconText}>i</Text>
+              </View>
+              <Text style={styles.footerDisclaimer}>{props.disclaimer}</Text>
             </View>
-            <Text style={styles.footerDisclaimer}>{props.disclaimer}</Text>
+            <View style={styles.footerRight}>
+              <Text style={styles.footerBrand}>{props.footerBrandLine}</Text>
+              <Text style={styles.footerContactLine}>{props.footerWebLine}</Text>
+              {props.footerPhoneLine ? (
+                <Text style={styles.footerContactMuted}>{props.footerPhoneLine}</Text>
+              ) : null}
+            </View>
           </View>
-          <View style={styles.footerRight}>
-            <Text style={styles.footerContactLine}>{props.footerPhoneLine}</Text>
-            <Text style={styles.footerContactMuted}>{props.footerWebLine}</Text>
+          <View style={styles.footerMeta}>
+            <Text style={styles.footerRef}>Ref. {props.quoteRef}</Text>
+            <Text
+              style={styles.pageNumber}
+              render={({ pageNumber, totalPages }) =>
+                `Página ${pageNumber} de ${totalPages}`
+              }
+            />
           </View>
         </View>
-
-        <Text
-          style={styles.pageNumber}
-          render={({ pageNumber, totalPages }) =>
-            `${pageNumber} / ${totalPages}`
-          }
-          fixed
-        />
       </Page>
     </Document>
   );

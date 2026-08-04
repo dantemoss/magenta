@@ -21,6 +21,16 @@ export type PlanQuoteRowForPdf = {
   error?: string;
 };
 
+/** Identificador único de cotización para archivo y registro comercial. */
+export function createQuoteRef(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const timePart = now.getTime().toString(36).toUpperCase().slice(-5);
+  const randPart = Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+  return `OSP-${y}${m}${d}-${timePart}${randPart}`;
+}
+
 function memberSummary(members: Member[]): string {
   const holder = members.find((x) => x.role === "holder");
   const spouse = members.find((x) => x.role === "spouse");
@@ -102,8 +112,7 @@ export async function downloadComparisonPdf(params: {
   const now = new Date();
   const quoteDateLabel = formatQuoteDate(now);
   const effectiveMonthLabel = formatEffectiveMonth(params.effectiveMonthISO);
-  const monthSlug = params.effectiveMonthISO.slice(0, 7);
-  const quoteRef = `COT-${monthSlug}-${now.getTime().toString(36).slice(-5).toUpperCase()}`;
+  const quoteRef = createQuoteRef(now);
 
   const ospadepLogoSrc =
     typeof window !== "undefined"
@@ -120,10 +129,6 @@ export async function downloadComparisonPdf(params: {
   const totalAportes = params.lastInputs
     ? params.lastInputs.holderAporte + params.lastInputs.spouseAporte
     : 0;
-  const contributionsLine =
-    totalAportes > 0
-      ? `${formatMoney(totalAportes)} descontados`
-      : "Sin aportes";
 
   const activeDiscounts = params.commercialDiscounts.filter(
     (d) => d.amount > 0,
@@ -132,22 +137,12 @@ export async function downloadComparisonPdf(params: {
     (acc, d) => acc + d.amount,
     0,
   );
-  const commercialDiscountsLine =
-    activeDiscounts.length === 0
-      ? "Ninguno"
-      : activeDiscounts
-          .map((d) => `${d.label} (${formatMoney(d.amount)})`)
-          .join(" · ");
 
   const modalityLabel = params.particular
     ? "Particular"
     : "Con aportes / relación de dependencia";
 
-  const quotedCount = params.rows.length;
-
   const summaryItems: ComparisonPdfSummaryItem[] = [
-    { label: "Alcance", value: params.scopeLabel },
-    { label: "Modalidad", value: modalityLabel },
     {
       label: "Grupo familiar",
       value:
@@ -155,38 +150,56 @@ export async function downloadComparisonPdf(params: {
           ? `${groupSummary} — ${groupCount} integrante${groupCount > 1 ? "s" : ""}`
           : groupSummary,
     },
-    { label: "Aportes mensuales", value: contributionsLine },
-    { label: "Descuentos comerciales", value: commercialDiscountsLine },
+    { label: "Modalidad", value: modalityLabel },
     {
-      label: "Planes cotizados",
-      value: `${quotedCount} plan${quotedCount === 1 ? "" : "es"}`,
+      label: "Vigencia tarifaria",
+      value: effectiveMonthLabel,
     },
   ];
+
+  if (totalAportes > 0) {
+    summaryItems.push({
+      label: "Aportes mensuales",
+      value: `${formatMoney(totalAportes)} aplicados`,
+    });
+  }
+
+  if (activeDiscounts.length > 0) {
+    summaryItems.push({
+      label: "Descuentos comerciales",
+      value: activeDiscounts
+        .map((d) => `${d.label} (${formatMoney(d.amount)})`)
+        .join(" · "),
+    });
+  }
+
+  if (params.scopeLabel && params.scopeLabel !== "—") {
+    summaryItems.push({
+      label: "Alcance",
+      value: params.scopeLabel,
+    });
+  }
 
   function buildFeatures(row: PlanQuoteRowForPdf): ComparisonPdfFeature[] {
     const features: ComparisonPdfFeature[] = [];
     const result = row.result;
     if (!result) {
       features.push({
-        label: "No fue posible calcular la cuota con los datos actuales.",
+        label: "No fue posible calcular la cuota con los datos indicados.",
       });
       return features;
     }
 
     features.push({
-      label: `Precio de tarifario ${formatMoney(result.basePrice)}`,
+      label: `Valor de tarifario ${formatMoney(result.basePrice)}`,
       emphasis: true,
     });
 
     const appliedDiscounts = result.discounts.filter((d) => d.value > 0);
     for (const d of appliedDiscounts) {
       features.push({
-        label: `${d.label}: -${formatMoney(d.value)}`,
+        label: `${d.label}: −${formatMoney(d.value)}`,
       });
-    }
-
-    if (appliedDiscounts.length === 0) {
-      features.push({ label: "Sin descuentos ni aportes aplicados." });
     }
 
     if (totalCommercialDiscounts > 0) {
@@ -235,24 +248,25 @@ export async function downloadComparisonPdf(params: {
   const input: ComparisonPdfInput = {
     documentLabel: "COTIZACIÓN",
     quoteRef,
-    heroTitle: "Elegí el plan de salud que mejor se adapta a vos",
+    heroTitle: "Propuesta de cobertura de salud a su medida",
     heroSubtitle:
-      "Compará prestadores, montos estimados y vigencia tarifaria. Los valores reflejan la simulación realizada en el cotizador OSPADEP.",
+      "Presentamos las opciones evaluadas para usted y su grupo familiar, con cuotas estimadas según la vigencia tarifaria indicada.",
     tagline:
       "Obra Social del Personal de Aeronavegación de Entes Privados (OSPADEP).",
-    title: "Cotización de planes de salud — OSPADEP",
+    title: `Cotización ${quoteRef} — OSPADEP`,
     logoSrc: ospadepLogoSrc,
     quoteDateLabel,
     effectiveMonthLabel,
     summaryItems,
     rows: pdfRows,
     bestPriceLabel: "MÁS CONVENIENTE",
-    regularPriceLabel: "OPCIÓN COTIZADA",
+    regularPriceLabel: "OPCIÓN PRESENTADA",
     disclaimer:
-      "Los importes son estimaciones según tarifario e ítems aplicados en esta simulación; no incluyen IVA ni constituyen oferta vinculante. " +
-      "Verificá copagos, carencias, prestadores y condiciones de contratación con cada entidad antes del cierre.",
-    footerPhoneLine: "Información institucional y canales de contacto",
+      "Los importes son estimativos según el tarifario y las condiciones indicadas en esta cotización. No incluyen IVA ni constituyen una oferta vinculante. " +
+      "Antes de contratar, confirme copagos, carencias, cartilla de prestadores y condiciones con OSPADEP o con cada entidad.",
+    footerBrandLine: "OSPADEP",
     footerWebLine: "www.ospadep.com",
+    footerPhoneLine: "0800-345-6732",
   };
 
   const blob = await pdf(<ComparisonPdfDocument {...input} />).toBlob();
@@ -260,7 +274,7 @@ export async function downloadComparisonPdf(params: {
   try {
     const a = document.createElement("a");
     a.href = url;
-    a.download = `cotizacion-planes-${monthSlug}.pdf`;
+    a.download = `cotizacion-${quoteRef}.pdf`;
     a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
