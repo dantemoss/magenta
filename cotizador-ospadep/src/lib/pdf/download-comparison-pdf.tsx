@@ -103,7 +103,7 @@ export async function downloadComparisonPdf(params: {
     spouseAporte: number;
     members: Member[];
   } | null;
-  commercialDiscounts: { label: string; amount: number }[];
+  commercialDiscounts: { label: string; percent: number }[];
   bestTotal: number | null;
 }): Promise<void> {
   if (typeof window !== "undefined") {
@@ -131,11 +131,7 @@ export async function downloadComparisonPdf(params: {
     : 0;
 
   const activeDiscounts = params.commercialDiscounts.filter(
-    (d) => d.amount > 0,
-  );
-  const totalCommercialDiscounts = activeDiscounts.reduce(
-    (acc, d) => acc + d.amount,
-    0,
+    (d) => d.percent > 0,
   );
 
   const modalityLabel = params.particular
@@ -168,7 +164,7 @@ export async function downloadComparisonPdf(params: {
     summaryItems.push({
       label: "Descuentos comerciales",
       value: activeDiscounts
-        .map((d) => `${d.label} (${formatMoney(d.amount)})`)
+        .map((d) => `${d.label || "Descuento"} (${d.percent}%)`)
         .join(" · "),
     });
   }
@@ -202,13 +198,17 @@ export async function downloadComparisonPdf(params: {
       });
     }
 
-    if (totalCommercialDiscounts > 0) {
+    if (activeDiscounts.length > 0) {
       const hasCommercialInResult = appliedDiscounts.some((d) =>
-        activeDiscounts.some((ad) => ad.label === d.label),
+        activeDiscounts.some(
+          (ad) => (ad.label.trim() || "Descuento comercial") === d.label,
+        ),
       );
       if (!hasCommercialInResult) {
         features.push({
-          label: `Incluye descuentos comerciales por ${formatMoney(totalCommercialDiscounts)}`,
+          label: `Incluye descuentos comerciales (${activeDiscounts
+            .map((d) => `${d.percent}%`)
+            .join(" + ")})`,
         });
       }
     }

@@ -183,22 +183,28 @@ function validateRequest(req: QuoteRequest): void {
     throw new Error("Debe existir exactamente un Titular (role='holder')");
   }
   for (const d of req.commercialDiscounts ?? []) {
-    if (!Number.isFinite(d.value) || d.value < 0) {
+    if (!Number.isFinite(d.percent) || d.percent < 0 || d.percent > 100) {
       throw new Error(`Descuento comercial inválido: ${d.label}`);
     }
   }
 }
 
-/** Descuentos de gestión comercial: mismo orden que tarifario (antes de aportes). */
+/**
+ * Descuentos comerciales en % sobre el subtotal tras descuentos automáticos
+ * del prestador (mismo orden: antes de aportes).
+ */
 function withCommercialDiscounts(
   strategyDiscounts: { label: string; value: number }[],
   req: QuoteRequest,
+  basePrice: number,
 ): { label: string; value: number }[] {
+  const autoTotal = sum(strategyDiscounts.map((d) => d.value));
+  const subtotalAfterAuto = Math.max(0, basePrice - autoTotal);
   const extra = (req.commercialDiscounts ?? [])
-    .filter((d) => Number.isFinite(d.value) && d.value > 0)
+    .filter((d) => Number.isFinite(d.percent) && d.percent > 0)
     .map((d) => ({
       label: d.label.trim() || "Descuento comercial",
-      value: clampMoney(d.value),
+      value: clampMoney(subtotalAfterAuto * (d.percent / 100)),
     }));
   return [...strategyDiscounts, ...extra];
 }
@@ -301,10 +307,11 @@ export class MedifeStrategy implements DetailedQuoteStrategy {
       });
     }
 
+    const basePrice = sum(lineItems.map((i) => i.price));
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: withCommercialDiscounts([], req),
+      discounts: withCommercialDiscounts([], req, basePrice),
       contributions: req.contributions,
     });
   }
@@ -409,10 +416,11 @@ export class OmintStrategy implements DetailedQuoteStrategy {
       });
     }
 
+    const basePrice = sum(lineItems.map((i) => i.price));
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: withCommercialDiscounts([], req),
+      discounts: withCommercialDiscounts([], req, basePrice),
       contributions: req.contributions,
     });
   }
@@ -485,7 +493,8 @@ export class OspadepStrategy implements DetailedQuoteStrategy {
     }));
 
     const discounts: { label: string; value: number }[] = [];
-    if (!req.isParticular) {
+    const applyPlanJoven = req.applyPlanJoven !== false;
+    if (!req.isParticular && applyPlanJoven) {
       let planJovenDiscount = 0;
       for (const it of items) {
         const isAdultoTitularOConyuge =
@@ -499,10 +508,11 @@ export class OspadepStrategy implements DetailedQuoteStrategy {
       }
     }
 
+    const basePrice = sum(lineItems.map((i) => i.price));
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: withCommercialDiscounts(discounts, req),
+      discounts: withCommercialDiscounts(discounts, req, basePrice),
       contributions: req.contributions,
     });
   }
@@ -541,10 +551,11 @@ export class SwissStrategy implements DetailedQuoteStrategy {
       });
     }
 
+    const basePrice = sum(lineItems.map((i) => i.price));
     return buildDetailedResult({
       providerName: ctx.providerName,
       lineItems,
-      discounts: withCommercialDiscounts([], req),
+      discounts: withCommercialDiscounts([], req, basePrice),
       contributions: req.contributions,
     });
   }

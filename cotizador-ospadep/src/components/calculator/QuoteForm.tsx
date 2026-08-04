@@ -155,8 +155,12 @@ const formSchema = z
       z.number({ message: "Importe inválido" }).min(0).optional(),
     ),
     commercialDiscounts: z.array(
-      z.object({ label: z.string(), amount: z.coerce.number().min(0) }),
+      z.object({
+        label: z.string(),
+        percent: z.coerce.number().min(0).max(100),
+      }),
     ),
+    applyPlanJoven: z.boolean(),
   })
   .superRefine((val, ctx) => {
     if (val.hasSpouse && typeof val.spouseAge !== "number") {
@@ -279,14 +283,18 @@ function buildQuoteRequest(values: FormValues): QuoteRequest {
     members.push({ role: "child", age: c.age });
   }
   const commercialDiscounts = (values.commercialDiscounts ?? [])
-    .filter((d) => d.amount > 0)
-    .map((d) => ({ label: d.label.trim() || "Descuento comercial", value: d.amount }));
+    .filter((d) => d.percent > 0)
+    .map((d) => ({
+      label: d.label.trim() || "Descuento comercial",
+      percent: d.percent,
+    }));
 
   return {
     members,
     isParticular: values.isParticular,
     contributions: holderAporte + spouseAporte,
     commercialDiscounts: commercialDiscounts.length > 0 ? commercialDiscounts : undefined,
+    applyPlanJoven: values.applyPlanJoven,
   };
 }
 
@@ -405,6 +413,7 @@ export function QuoteForm() {
       spouseContribution: undefined,
       spouseGross: undefined,
       commercialDiscounts: [],
+      applyPlanJoven: true,
     },
   });
 
@@ -415,6 +424,7 @@ export function QuoteForm() {
   const holderAge = useWatch({ control: form.control, name: "holderAge" });
   const spouseAge = useWatch({ control: form.control, name: "spouseAge" });
   const isParticular = useWatch({ control: form.control, name: "isParticular" });
+  const applyPlanJoven = useWatch({ control: form.control, name: "applyPlanJoven" });
   const holderUsesGross = useWatch({ control: form.control, name: "holderUsesGross" });
   const spouseUsesGross = useWatch({ control: form.control, name: "spouseUsesGross" });
   const holderContribution = useWatch({ control: form.control, name: "holderContribution" });
@@ -442,6 +452,48 @@ export function QuoteForm() {
     () => (compareAllProviders ? plans.map((p) => p.id) : selectedPlanIds),
     [compareAllProviders, plans, selectedPlanIds],
   );
+
+  const quotingOspadep = React.useMemo(() => {
+    if (compareAllProviders) {
+      return providers.some((p) => p.slug.toLowerCase() === "ospadep");
+    }
+    if (selectedProvider?.slug.toLowerCase() === "ospadep") return true;
+    return selectedPlanIds.some((id) => {
+      const plan = plans.find((p) => p.id === id);
+      if (!plan) return false;
+      return providerById.get(plan.provider_id)?.slug.toLowerCase() === "ospadep";
+    });
+  }, [
+    compareAllProviders,
+    providers,
+    selectedProvider,
+    selectedPlanIds,
+    plans,
+    providerById,
+  ]);
+
+  const planJovenEligible = React.useMemo(() => {
+    if (isParticular || !quotingOspadep) return false;
+    const holderOk = typeof holderAge === "number" && holderAge < 35;
+    const spouseOk =
+      hasSpouse && typeof spouseAge === "number" && spouseAge < 35;
+    return holderOk || spouseOk;
+  }, [isParticular, quotingOspadep, holderAge, hasSpouse, spouseAge]);
+
+  const prevPlanJovenEligible = React.useRef(false);
+  React.useEffect(() => {
+    if (planJovenEligible && !prevPlanJovenEligible.current) {
+      form.setValue("applyPlanJoven", true, { shouldDirty: true });
+      setPlanCompareRows([]);
+    }
+    if (!planJovenEligible && prevPlanJovenEligible.current) {
+      form.setValue("applyPlanJoven", false, { shouldDirty: true });
+      setPlanCompareRows([]);
+    } else if (!planJovenEligible) {
+      form.setValue("applyPlanJoven", false);
+    }
+    prevPlanJovenEligible.current = planJovenEligible;
+  }, [planJovenEligible, form]);
 
   // Load providers and plans
   React.useEffect(() => {
@@ -1340,13 +1392,41 @@ export function QuoteForm() {
                   </p>
                 </div>
 
+                {/* Plan Joven (OSPADEP) */}
+                {planJovenEligible && (
+                  <div
+                    className="flex items-center justify-between rounded-lg bg-white px-4 py-3.5"
+                    style={{ boxShadow: shadowBorder }}
+                  >
+                    <div className="space-y-0.5 pr-3">
+                      <Label htmlFor="applyPlanJoven" className="text-sm font-medium text-foreground">
+                        Plan Joven (OSPADEP)
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        25% de descuento para titular y/o cónyuge menores de 35 años. Podés desactivarlo si no corresponde.
+                      </p>
+                    </div>
+                    <Switch
+                      id="applyPlanJoven"
+                      checked={Boolean(applyPlanJoven)}
+                      onCheckedChange={(checked) => {
+                        form.setValue("applyPlanJoven", checked, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
+                        setPlanCompareRows([]);
+                      }}
+                    />
+                  </div>
+                )}
+
                 {/* Commercial discounts */}
                 <div className="rounded-lg p-5" style={{ boxShadow: shadowBorder }}>
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium text-foreground">Descuentos comerciales</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Se aplican al subtotal antes de descontar los aportes.
+                        Porcentaje sobre el subtotal, antes de descontar los aportes.
                       </p>
                     </div>
                     <Button
@@ -1355,7 +1435,10 @@ export function QuoteForm() {
                       size="sm"
                       className="shrink-0 border-0 text-xs"
                       style={{ boxShadow: "0px 0px 0px 1px rgba(0,0,0,0.10)" }}
-                      onClick={() => { commercialDiscountsArray.append({ label: "", amount: 0 }); setPlanCompareRows([]); }}
+                      onClick={() => {
+                        commercialDiscountsArray.append({ label: "", percent: 0 });
+                        setPlanCompareRows([]);
+                      }}
                     >
                       + Agregar
                     </Button>
@@ -1380,21 +1463,25 @@ export function QuoteForm() {
                               }}
                             />
                           </div>
-                          <div className="w-full space-y-1 sm:w-32">
-                            <Label className="text-xs text-muted-foreground">Importe</Label>
+                          <div className="w-full space-y-1 sm:w-28">
+                            <Label className="text-xs text-muted-foreground">Porcentaje</Label>
                             <Input
                               className="h-9 border-0 bg-white"
                               style={{ boxShadow: shadowInput }}
                               type="text"
                               inputMode="numeric"
-                              placeholder="$"
-                              {...form.register(`commercialDiscounts.${idx}.amount`, {
-                                setValueAs: (v) => parseDigitsToNumber(v) ?? 0,
+                              placeholder="%"
+                              {...form.register(`commercialDiscounts.${idx}.percent`, {
+                                setValueAs: (v) => {
+                                  const n = parseDigitsToNumber(v) ?? 0;
+                                  return Math.min(100, n);
+                                },
                               })}
                               onChange={(e) => {
-                                const digits = digitsOnly(e.target.value);
-                                e.target.value = digits;
-                                form.setValue(`commercialDiscounts.${idx}.amount`, parseDigitsToNumber(digits) ?? 0, {
+                                const digits = digitsOnly(e.target.value).slice(0, 3);
+                                const n = Math.min(100, parseDigitsToNumber(digits) ?? 0);
+                                e.target.value = digits === "" ? "" : String(n);
+                                form.setValue(`commercialDiscounts.${idx}.percent`, n, {
                                   shouldValidate: true,
                                   shouldDirty: true,
                                 });
@@ -1407,7 +1494,10 @@ export function QuoteForm() {
                             variant="ghost"
                             size="sm"
                             className="h-9 shrink-0 text-xs text-muted-foreground"
-                            onClick={() => { commercialDiscountsArray.remove(idx); setPlanCompareRows([]); }}
+                            onClick={() => {
+                              commercialDiscountsArray.remove(idx);
+                              setPlanCompareRows([]);
+                            }}
                           >
                             Quitar
                           </Button>
