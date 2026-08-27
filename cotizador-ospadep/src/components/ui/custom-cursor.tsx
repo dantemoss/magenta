@@ -4,21 +4,28 @@ import * as React from "react";
 
 export function CustomCursor() {
   const cursorRef = React.useRef<HTMLDivElement>(null);
-  const target = React.useRef({ x: -200, y: -200 });
-  const current = React.useRef({ x: -200, y: -200 });
-  const rafId = React.useRef<number | null>(null);
   const [visible, setVisible] = React.useState(false);
   const [pressed, setPressed] = React.useState(false);
 
   React.useEffect(() => {
     function onMove(e: MouseEvent) {
-      target.current = { x: e.clientX, y: e.clientY };
+      if (cursorRef.current) {
+        cursorRef.current.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+      }
       if (!visible) setVisible(true);
     }
-    function onLeave() { setVisible(false); }
-    function onEnter() { setVisible(true); }
-    function onDown() { setPressed(true); }
-    function onUp() { setPressed(false); }
+    function onLeave() {
+      setVisible(false);
+    }
+    function onEnter() {
+      setVisible(true);
+    }
+    function onDown() {
+      setPressed(true);
+    }
+    function onUp() {
+      setPressed(false);
+    }
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseleave", onLeave);
@@ -26,29 +33,12 @@ export function CustomCursor() {
     document.addEventListener("mousedown", onDown);
     document.addEventListener("mouseup", onUp);
 
-    // Lerp factor — 0.14 da un lag leve y fluido
-    const LERP = 0.14;
-
-    function tick() {
-      current.current.x += (target.current.x - current.current.x) * LERP;
-      current.current.y += (target.current.y - current.current.y) * LERP;
-
-      if (cursorRef.current) {
-        cursorRef.current.style.transform = `translate3d(${current.current.x}px, ${current.current.y}px, 0)`;
-      }
-
-      rafId.current = requestAnimationFrame(tick);
-    }
-
-    rafId.current = requestAnimationFrame(tick);
-
     return () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseleave", onLeave);
       document.removeEventListener("mouseenter", onEnter);
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("mouseup", onUp);
-      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
     };
   }, [visible]);
 
