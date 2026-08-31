@@ -193,6 +193,20 @@ export async function downloadComparisonPdf(params: {
 
     const appliedDiscounts = result.discounts.filter((d) => d.value > 0);
     for (const d of appliedDiscounts) {
+      if (d.label === "Plan Joven") {
+        features.push({ label: "Plan Joven: −25%" });
+        continue;
+      }
+      const commercial = activeDiscounts.find(
+        (ad) => (ad.label.trim() || "Descuento comercial") === d.label,
+      );
+      if (commercial) {
+        features.push({
+          label: `${d.label}: −${commercial.percent}%`,
+        });
+        continue;
+      }
+      // Aportes u otros: se mantiene el importe
       features.push({
         label: `${d.label}: −${formatMoney(d.value)}`,
       });
