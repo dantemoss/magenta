@@ -190,22 +190,11 @@ const formSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["holderContribution"], message: "Aportes inválidos" });
     }
     if (val.hasSpouse) {
-      if (val.spouseUsesGross && typeof val.spouseGross !== "number") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["spouseGross"],
-          message: "Ingresá el sueldo bruto del cónyuge",
-        });
-      } else if (val.spouseUsesGross && typeof val.spouseGross === "number" && val.spouseGross < 0) {
+      // Cónyuge sin sueldo/aportes: vacío se trata como 0 (no bloquea cotizar).
+      if (val.spouseUsesGross && typeof val.spouseGross === "number" && val.spouseGross < 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["spouseGross"], message: "Sueldo bruto inválido" });
       }
-      if (!val.spouseUsesGross && typeof val.spouseContribution !== "number") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["spouseContribution"],
-          message: "Ingresá el aporte directo del cónyuge",
-        });
-      } else if (!val.spouseUsesGross && typeof val.spouseContribution === "number" && val.spouseContribution < 0) {
+      if (!val.spouseUsesGross && typeof val.spouseContribution === "number" && val.spouseContribution < 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["spouseContribution"], message: "Aportes inválidos" });
       }
     }
@@ -729,11 +718,24 @@ export function QuoteForm() {
       setStepDir(1);
       setCurrentStep(2);
     } else if (currentStep === 2) {
-      form.handleSubmit((values) => {
-        onSubmit(values);
-        setStepDir(1);
-        setCurrentStep(3);
-      })();
+      form.handleSubmit(
+        (values) => {
+          onSubmit(values);
+          setStepDir(1);
+          setCurrentStep(3);
+        },
+        (errors) => {
+          const first =
+            errors.holderGross?.message ||
+            errors.holderContribution?.message ||
+            errors.spouseGross?.message ||
+            errors.spouseContribution?.message ||
+            errors.holderAge?.message ||
+            errors.spouseAge?.message ||
+            "Revisá los datos de aportes para continuar.";
+          setError(String(first));
+        },
+      )();
     }
   }
 
@@ -1280,25 +1282,55 @@ export function QuoteForm() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   {/* Titular */}
                   <div className="rounded-lg p-4" style={{ boxShadow: shadowBorder }}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-foreground">Titular</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Bruto</span>
-                        <Switch
-                          checked={Boolean(holderUsesGross)}
-                          onCheckedChange={(checked) => {
-                            form.setValue("holderUsesGross", checked, { shouldValidate: true, shouldDirty: true });
-                            setPlanCompareRows([]);
-                          }}
-                        />
-                      </div>
+                    <p className="text-sm font-medium text-foreground">Titular</p>
+                    <div
+                      className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+                      role="group"
+                      aria-label="Tipo de ingreso del titular"
+                    >
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                          holderUsesGross
+                            ? "bg-white text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => {
+                          form.setValue("holderUsesGross", true, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          setPlanCompareRows([]);
+                        }}
+                      >
+                        Sueldo bruto
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                          !holderUsesGross
+                            ? "bg-white text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => {
+                          form.setValue("holderUsesGross", false, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          setPlanCompareRows([]);
+                        }}
+                      >
+                        Aporte directo
+                      </button>
                     </div>
                     <div className="mt-3 space-y-1">
                       <Label
                         htmlFor={holderUsesGross ? "holderGross" : "holderContribution"}
                         className="text-xs text-muted-foreground"
                       >
-                        {holderUsesGross ? "Sueldo bruto" : "Aportes directos"}
+                        {holderUsesGross ? "Monto del sueldo bruto" : "Monto del aporte mensual"}
                       </Label>
                       <Input
                         id={holderUsesGross ? "holderGross" : "holderContribution"}
@@ -1320,6 +1352,17 @@ export function QuoteForm() {
                           setPlanCompareRows([]);
                         }}
                       />
+                      <p className="text-[11px] text-muted-foreground">
+                        {holderUsesGross
+                          ? "Calculamos automáticamente el 7,65% sobre el bruto."
+                          : "Ingresá el aporte que ya conocés, sin calcular desde el sueldo."}
+                      </p>
+                      {(form.formState.errors.holderGross || form.formState.errors.holderContribution) && (
+                        <p className="text-xs text-destructive">
+                          {form.formState.errors.holderGross?.message ||
+                            form.formState.errors.holderContribution?.message}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1328,33 +1371,64 @@ export function QuoteForm() {
                     className={cn("rounded-lg p-4", !hasSpouse && "opacity-50")}
                     style={{ boxShadow: shadowBorder }}
                   >
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-foreground">Cónyuge</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Bruto</span>
-                        <Switch
-                          checked={Boolean(spouseUsesGross)}
-                          onCheckedChange={(checked) => {
-                            form.setValue("spouseUsesGross", checked, { shouldValidate: true, shouldDirty: true });
-                            setPlanCompareRows([]);
-                          }}
-                          disabled={!hasSpouse}
-                        />
-                      </div>
+                    <p className="text-sm font-medium text-foreground">Cónyuge</p>
+                    <div
+                      className="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+                      role="group"
+                      aria-label="Tipo de ingreso del cónyuge"
+                    >
+                      <button
+                        type="button"
+                        disabled={!hasSpouse}
+                        className={cn(
+                          "rounded-md px-2 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed",
+                          spouseUsesGross
+                            ? "bg-white text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => {
+                          form.setValue("spouseUsesGross", true, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          setPlanCompareRows([]);
+                        }}
+                      >
+                        Sueldo bruto
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!hasSpouse}
+                        className={cn(
+                          "rounded-md px-2 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed",
+                          !spouseUsesGross
+                            ? "bg-white text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => {
+                          form.setValue("spouseUsesGross", false, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                          setPlanCompareRows([]);
+                        }}
+                      >
+                        Aporte directo
+                      </button>
                     </div>
                     <div className="mt-3 space-y-1">
                       <Label
                         htmlFor={spouseUsesGross ? "spouseGross" : "spouseContribution"}
                         className="text-xs text-muted-foreground"
                       >
-                        {spouseUsesGross ? "Sueldo bruto" : "Aportes directos"}
+                        {spouseUsesGross ? "Monto del sueldo bruto" : "Monto del aporte mensual"}
                       </Label>
                       <Input
                         id={spouseUsesGross ? "spouseGross" : "spouseContribution"}
                         type="text"
                         inputMode="numeric"
                         autoComplete="off"
-                        placeholder="$"
+                        placeholder="$0"
                         className="h-11 rounded-xl border-0 bg-white text-sm font-medium tabular-nums placeholder:text-muted-foreground/55"
                         style={{ boxShadow: shadowInput }}
                         value={formatGroupedCurrency(
@@ -1370,6 +1444,20 @@ export function QuoteForm() {
                           setPlanCompareRows([]);
                         }}
                       />
+                      <p className="text-[11px] text-muted-foreground">
+                        {spouseUsesGross
+                          ? "Calculamos el 7,65% sobre el bruto. "
+                          : "Ingresá el aporte mensual. "}
+                        <span className="font-semibold text-foreground">
+                          $0 = sin aportes sin sueldo
+                        </span>
+                      </p>
+                      {(form.formState.errors.spouseGross || form.formState.errors.spouseContribution) && (
+                        <p className="text-xs text-destructive">
+                          {form.formState.errors.spouseGross?.message ||
+                            form.formState.errors.spouseContribution?.message}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
