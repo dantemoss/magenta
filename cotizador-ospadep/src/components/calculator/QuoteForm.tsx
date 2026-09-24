@@ -544,14 +544,14 @@ export function QuoteForm() {
             .maybeSingle(),
         ]);
         if (provErr) throw provErr;
-        let planRows = pls;
+        let planRows = (pls ?? null) as PlanRow[] | null;
         let planLoadErr = planErr;
         if (
           planLoadErr &&
           (planLoadErr as { code?: string }).code === "42703"
         ) {
           const retry = await supabase.from("plans").select("id,provider_id,name,type").order("name");
-          planRows = retry.data;
+          planRows = (retry.data ?? null) as PlanRow[] | null;
           planLoadErr = retry.error;
         }
         if (planLoadErr) throw planLoadErr;
