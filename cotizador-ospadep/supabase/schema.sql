@@ -20,6 +20,8 @@ create table if not exists public.plans (
   provider_id uuid not null references public.providers(id) on delete cascade,
   name text not null,
   type text not null,
+  -- Suspendido: visible, sigue en aumentos mensuales, no se puede cotizar ni exportar.
+  suspended boolean not null default false,
   created_at timestamptz not null default now(),
   unique (provider_id, name, type)
 );

@@ -205,7 +205,26 @@ type FormInput = z.input<typeof formSchema>;
 type FormOutput = z.output<typeof formSchema>;
 
 type ProviderRow = { id: string; name: string; slug: string };
-type PlanRow = { id: string; provider_id: string; name: string; type: string };
+type PlanRow = {
+  id: string;
+  provider_id: string;
+  name: string;
+  type: string;
+  /** undefined = la columna aún no existe en Supabase; se aplica el fallback de resolución. */
+  suspended?: boolean;
+};
+
+/** Fallback si todavía no se corrió el SQL de suspensión. */
+const SWISS_RESOLUTION_PLAN_NAMES = new Set(["SB04", "PO62", "PO64"]);
+
+function isPlanSuspended(plan: PlanRow, providerSlug: string | undefined): boolean {
+  if (plan.suspended === true) return true;
+  if (plan.suspended === false) return false;
+  return (
+    (providerSlug ?? "").toLowerCase() === "swiss-medical" &&
+    SWISS_RESOLUTION_PLAN_NAMES.has(plan.name)
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -437,9 +456,17 @@ export function QuoteForm() {
     return m;
   }, [providers]);
 
+  const quotablePlanIds = React.useCallback(
+    (list: PlanRow[]) =>
+      list
+        .filter((p) => !isPlanSuspended(p, providerById.get(p.provider_id)?.slug))
+        .map((p) => p.id),
+    [providerById],
+  );
+
   const planIdsForPrices = React.useMemo(
-    () => (compareAllProviders ? plans.map((p) => p.id) : selectedPlanIds),
-    [compareAllProviders, plans, selectedPlanIds],
+    () => (compareAllProviders ? quotablePlanIds(plans) : selectedPlanIds),
+    [compareAllProviders, plans, selectedPlanIds, quotablePlanIds],
   );
 
   const quotingOspadep = React.useMemo(() => {
@@ -505,7 +532,7 @@ export function QuoteForm() {
           { data: activeSettingRaw, error: settingErr },
         ] = await Promise.all([
           supabase.from("providers").select("id,name,slug").order("name"),
-          supabase.from("plans").select("id,provider_id,name,type").order("name"),
+          supabase.from("plans").select("id,provider_id,name,type,suspended").order("name"),
           supabase
             .from("prices")
             .select("effective_month")
@@ -517,7 +544,17 @@ export function QuoteForm() {
             .maybeSingle(),
         ]);
         if (provErr) throw provErr;
-        if (planErr) throw planErr;
+        let planRows = pls;
+        let planLoadErr = planErr;
+        if (
+          planLoadErr &&
+          (planLoadErr as { code?: string }).code === "42703"
+        ) {
+          const retry = await supabase.from("plans").select("id,provider_id,name,type").order("name");
+          planRows = retry.data;
+          planLoadErr = retry.error;
+        }
+        if (planLoadErr) throw planLoadErr;
         if (monthErr) throw monthErr;
         if (
           settingErr &&
@@ -528,7 +565,7 @@ export function QuoteForm() {
 
         if (!alive) return;
         const provList = (provs ?? []) as ProviderRow[];
-        const planList = (pls ?? []) as PlanRow[];
+        const planList = (planRows ?? []) as PlanRow[];
 
         setProviders(provList);
         setPlans(planList);
@@ -604,7 +641,13 @@ export function QuoteForm() {
     setError(null);
     setExpandedPlanId(null);
     try {
-      const idsToQuote = compareAllProviders ? plans.map((p) => p.id) : selectedPlanIds;
+      const idsToQuote = (
+        compareAllProviders ? quotablePlanIds(plans) : selectedPlanIds
+      ).filter((id) => {
+        const plan = plans.find((p) => p.id === id);
+        if (!plan) return false;
+        return !isPlanSuspended(plan, providerById.get(plan.provider_id)?.slug);
+      });
       if (idsToQuote.length === 0) {
         throw new Error(compareAllProviders ? "No hay planes cargados" : "Marcá al menos un plan");
       }
@@ -1004,7 +1047,10 @@ export function QuoteForm() {
                             size="sm"
                             className="h-7 px-2 text-xs text-muted-foreground"
                             disabled={providerPlans.length === 0 || loading}
-                            onClick={() => { setSelectedPlanIds(providerPlans.map((p) => p.id)); setPlanCompareRows([]); }}
+                            onClick={() => {
+                              setSelectedPlanIds(quotablePlanIds(providerPlans));
+                              setPlanCompareRows([]);
+                            }}
                           >
                             Todos
                           </Button>
@@ -1038,18 +1084,28 @@ export function QuoteForm() {
                           <p className="px-2 py-2 text-xs text-muted-foreground">Sin planes para este prestador.</p>
                         ) : (
                           providerPlans.map((pl) => {
-                            const checked = selectedPlanIds.includes(pl.id);
+                            const suspended = isPlanSuspended(
+                              pl,
+                              providerById.get(pl.provider_id)?.slug,
+                            );
+                            const checked = !suspended && selectedPlanIds.includes(pl.id);
                             const hasPrices = (pricesByPlan[pl.id]?.length ?? 0) > 0;
                             return (
                               <label
                                 key={pl.id}
-                                className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
+                                className={
+                                  suspended
+                                    ? "flex cursor-not-allowed items-start gap-2.5 rounded-md px-2 py-1.5 text-sm opacity-80"
+                                    : "flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
+                                }
                               >
                                 <input
                                   type="checkbox"
                                   className="mt-0.5 size-3.5 accent-primary"
                                   checked={checked}
+                                  disabled={suspended}
                                   onChange={(e) => {
+                                    if (suspended) return;
                                     setSelectedPlanIds((prev) => togglePlanId(prev, pl.id, e.target.checked));
                                     setPlanCompareRows([]);
                                   }}
@@ -1057,10 +1113,17 @@ export function QuoteForm() {
                                 <span className="min-w-0 leading-tight">
                                   <span className="font-medium text-foreground">{pl.name}</span>
                                   <span className="text-muted-foreground"> · {pl.type}</span>
-                                  {!hasPrices && !loadingPrices && (
-                                    <span className="mt-0.5 block text-[11px] text-amber-700">
-                                      Sin tarifa este mes
+                                  {suspended ? (
+                                    <span className="mt-0.5 block text-[11px] font-medium text-red-600">
+                                      Alcanzado por resolución, no disponible por el momento
                                     </span>
+                                  ) : (
+                                    !hasPrices &&
+                                    !loadingPrices && (
+                                      <span className="mt-0.5 block text-[11px] text-amber-700">
+                                        Sin tarifa este mes
+                                      </span>
+                                    )
                                   )}
                                 </span>
                               </label>
