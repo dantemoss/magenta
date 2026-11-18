@@ -68,7 +68,10 @@ export default function RootLayout({
       lang="es"
       className={`${poppins.variable} ${raleway.variable} h-full antialiased`}
     >
-      <body className="relative flex min-h-full flex-col bg-muted text-foreground">
+      <body
+        className="relative flex min-h-full flex-col bg-muted text-foreground"
+        suppressHydrationWarning
+      >
         <DotPattern
           width={20}
           height={20}

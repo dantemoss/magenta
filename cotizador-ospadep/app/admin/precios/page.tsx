@@ -17,12 +17,12 @@ import {
   type PlanOverrideInput,
 } from "@/lib/prices/batch-update";
 import {
-  distinctMonthsDesc,
   isActiveSettingStale,
   monthYYYYMM,
   normalizeMonthISO,
   resolveEffectiveMonth,
 } from "@/lib/prices/effective-month";
+import { fetchDistinctPriceMonths } from "@/lib/prices/list-months";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -175,6 +175,7 @@ export default function AdminPricesPage() {
   const [savingActiveMonth, setSavingActiveMonth] = React.useState(false);
   const [deleteMonth, setDeleteMonth] = React.useState<string>("");
   const [deletingMonth, setDeletingMonth] = React.useState(false);
+  const [monthOptions, setMonthOptions] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     let alive = true;
@@ -238,8 +239,9 @@ export default function AdminPricesPage() {
         setPlans((pls ?? []) as PlanRow[]);
         setPrices(pricesRows);
         setBatches((bts ?? []) as BatchRow[]);
-        const availableISO = distinctMonthsDesc(pricesRows);
+        const availableISO = await fetchDistinctPriceMonths();
         const available = availableISO.map(monthYYYYMM);
+        setMonthOptions(available);
         const settingISO = normalizeMonthISO((st as AppSettingRow | null)?.value_text);
         const resolvedISO = resolveEffectiveMonth({
           activeSetting: settingISO,
@@ -302,9 +304,25 @@ export default function AdminPricesPage() {
     });
   }, [prices, pricesMonthFilter, filter, planById, providerById]);
 
-  const availablePriceMonths = React.useMemo(() => {
-    return distinctMonthsDesc(prices).map(monthYYYYMM);
-  }, [prices]);
+  const availablePriceMonths = monthOptions;
+
+  React.useEffect(() => {
+    if (!supabase || pricesMonthFilter === "all" || !/^\d{4}-\d{2}$/.test(pricesMonthFilter)) return;
+    let alive = true;
+    async function loadMonthPrices() {
+      const { data, error } = await supabase!
+        .from("prices")
+        .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
+        .eq("effective_month", `${pricesMonthFilter}-01`)
+        .limit(5000);
+      if (!alive || error) return;
+      setPrices((data ?? []) as PriceRow[]);
+    }
+    void loadMonthPrices();
+    return () => {
+      alive = false;
+    };
+  }, [pricesMonthFilter]);
 
   const duplicatedRowsInSameMonth = React.useMemo(() => {
     const counter = new Map<string, number>();
@@ -479,8 +497,8 @@ export default function AdminPricesPage() {
       // limpiar preview solo si se aplicó
       const status = (data as ApplyBatchResult)?.status;
       if (status === "applied" || status === "already_applied") {
-        const pricesRows = (prs ?? []) as PriceRow[];
-        const availableISO = distinctMonthsDesc(pricesRows);
+        const availableISO = await fetchDistinctPriceMonths();
+        setMonthOptions(availableISO.map(monthYYYYMM));
         const appliedMonthISO = monthInputToMonthStartISO(targetMonth);
         const resolvedISO = availableISO.includes(appliedMonthISO)
           ? appliedMonthISO
@@ -579,8 +597,8 @@ export default function AdminPricesPage() {
 
       const pricesRows = (prs ?? []) as PriceRow[];
       setPrices(pricesRows);
-      const months = [...new Set(pricesRows.map((r) => (r.effective_month ?? "").slice(0, 7)).filter(Boolean))]
-        .sort((a, b) => b.localeCompare(a));
+      const months = (await fetchDistinctPriceMonths()).map(monthYYYYMM);
+      setMonthOptions(months);
       const fallbackMonth = months[0] ?? "";
       if (!months.includes(activeMonth)) {
         setActiveMonth(fallbackMonth);
@@ -1051,7 +1069,10 @@ export default function AdminPricesPage() {
               <CardContent className="space-y-3">
                 <div className="space-y-2">
                   <Label>Período</Label>
-                  <Select value={activeMonth} onValueChange={setActiveMonth}>
+                  <Select
+                    value={availablePriceMonths.includes(activeMonth) ? activeMonth : undefined}
+                    onValueChange={setActiveMonth}
+                  >
                     <SelectTrigger className="h-10 rounded-lg">
                       <SelectValue placeholder="Elegí una vigencia" />
                     </SelectTrigger>

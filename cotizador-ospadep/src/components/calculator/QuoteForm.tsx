@@ -26,9 +26,10 @@ import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/money";
 import { monthStartISO } from "@/lib/month";
 import {
-  distinctMonthsDesc,
+  normalizeMonthISO,
   resolveEffectiveMonth,
 } from "@/lib/prices/effective-month";
+import { fetchDistinctPriceMonths } from "@/lib/prices/list-months";
 import { dedupePriceRowsPreferHigherTariff } from "@/lib/prices/dedupe-price-rows";
 import { providerLogoSrc } from "@/lib/provider-logos";
 import { Button } from "@/components/ui/button";
@@ -399,6 +400,7 @@ export function QuoteForm() {
   const [selectedPlanIds, setSelectedPlanIds] = React.useState<string[]>([]);
   const [compareAllProviders, setCompareAllProviders] = React.useState(false);
   const [pricesByPlan, setPricesByPlan] = React.useState<Record<string, PriceRow[]>>({});
+  const [priceMonthByPlan, setPriceMonthByPlan] = React.useState<Record<string, string>>({});
   const [lastInputs, setLastInputs] = React.useState<{
     holderAporte: number;
     spouseAporte: number;
@@ -556,6 +558,7 @@ export function QuoteForm() {
         }
         if (planLoadErr) throw planLoadErr;
         if (monthErr) throw monthErr;
+        const availableMonths = await fetchDistinctPriceMonths();
         if (
           settingErr &&
           !["PGRST116", "PGRST205", "42P01"].includes((settingErr as { code?: string }).code ?? "")
@@ -570,9 +573,6 @@ export function QuoteForm() {
         setProviders(provList);
         setPlans(planList);
 
-        const availableMonths = distinctMonthsDesc(
-          (monthRows ?? []) as { effective_month?: string | null }[],
-        );
         const activeSetting = String(
           (activeSettingRaw as { value_text?: unknown } | null)?.value_text ?? "",
         );
@@ -603,29 +603,48 @@ export function QuoteForm() {
     let alive = true;
     async function loadPrices() {
       setPricesByPlan({});
+      setPriceMonthByPlan({});
       if (!effectiveMonth) return;
       if (planIdsForPrices.length === 0) { setLoadingPrices(false); return; }
       if (!supabase) return;
       setLoadingPrices(true);
       try {
-        const { data, error: prErr } = await supabase
-          .from("prices")
-          .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
-          .in("plan_id", planIdsForPrices)
-          .eq("effective_month", effectiveMonth)
-          .order("plan_id")
-          .order("role")
-          .order("age_min");
-        if (prErr) throw prErr;
+        const loaded = await Promise.all(
+          planIdsForPrices.map(async (planId) => {
+            const { data: head, error: headErr } = await supabase
+              .from("prices")
+              .select("effective_month")
+              .eq("plan_id", planId)
+              .lte("effective_month", effectiveMonth)
+              .order("effective_month", { ascending: false })
+              .limit(1);
+            if (headErr) throw headErr;
+            const month = normalizeMonthISO(String(head?.[0]?.effective_month ?? "").slice(0, 10));
+            if (!month) return { planId, month: null as string | null, rows: [] as PriceRow[] };
+            const { data, error: rowErr } = await supabase
+              .from("prices")
+              .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
+              .eq("plan_id", planId)
+              .eq("effective_month", month)
+              .limit(2000);
+            if (rowErr) throw rowErr;
+            return {
+              planId,
+              month,
+              rows: dedupePriceRowsPreferHigherTariff((data ?? []) as PriceRow[]),
+            };
+          }),
+        );
         if (!alive) return;
-        const rows = dedupePriceRowsPreferHigherTariff((data ?? []) as PriceRow[]);
         const byPlan: Record<string, PriceRow[]> = {};
-        for (const r of rows) {
-          const id = r.plan_id;
-          if (!byPlan[id]) byPlan[id] = [];
-          byPlan[id].push(r);
+        const monthByPlan: Record<string, string> = {};
+        for (const item of loaded) {
+          if (!item.month || item.rows.length === 0) continue;
+          byPlan[item.planId] = item.rows;
+          monthByPlan[item.planId] = item.month;
         }
         setPricesByPlan(byPlan);
+        setPriceMonthByPlan(monthByPlan);
       } catch (e) {
         if (!alive) return;
         setError(getErrorMessage(e, "Error cargando precios"));
@@ -1090,6 +1109,10 @@ export function QuoteForm() {
                             );
                             const checked = !suspended && selectedPlanIds.includes(pl.id);
                             const hasPrices = (pricesByPlan[pl.id]?.length ?? 0) > 0;
+                            const planMonth = priceMonthByPlan[pl.id];
+                            const usesOlderMonth = Boolean(
+                              hasPrices && effectiveMonth && planMonth && planMonth !== effectiveMonth,
+                            );
                             return (
                               <label
                                 key={pl.id}
@@ -1117,11 +1140,15 @@ export function QuoteForm() {
                                     <span className="mt-0.5 block text-[11px] font-medium text-red-600">
                                       Alcanzado por resolución, no disponible por el momento
                                     </span>
+                                  ) : usesOlderMonth ? (
+                                    <span className="mt-0.5 block text-[11px] text-amber-700">
+                                      Tarifa de {planMonth?.slice(0, 7)}
+                                    </span>
                                   ) : (
                                     !hasPrices &&
                                     !loadingPrices && (
                                       <span className="mt-0.5 block text-[11px] text-amber-700">
-                                        Sin tarifa este mes
+                                        Sin tarifa cargada
                                       </span>
                                     )
                                   )}
