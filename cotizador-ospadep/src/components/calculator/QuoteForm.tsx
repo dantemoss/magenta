@@ -607,11 +607,12 @@ export function QuoteForm() {
       if (!effectiveMonth) return;
       if (planIdsForPrices.length === 0) { setLoadingPrices(false); return; }
       if (!supabase) return;
+      const client = supabase;
       setLoadingPrices(true);
       try {
         const loaded = await Promise.all(
           planIdsForPrices.map(async (planId) => {
-            const { data: head, error: headErr } = await supabase
+            const { data: head, error: headErr } = await client
               .from("prices")
               .select("effective_month")
               .eq("plan_id", planId)
@@ -621,7 +622,7 @@ export function QuoteForm() {
             if (headErr) throw headErr;
             const month = normalizeMonthISO(String(head?.[0]?.effective_month ?? "").slice(0, 10));
             if (!month) return { planId, month: null as string | null, rows: [] as PriceRow[] };
-            const { data, error: rowErr } = await supabase
+            const { data, error: rowErr } = await client
               .from("prices")
               .select("plan_id,age_min,age_max,role,price,is_particular,effective_month")
               .eq("plan_id", planId)
